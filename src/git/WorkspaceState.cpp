@@ -125,11 +125,11 @@ void WorkspaceState::MoveCheckedOutFile(std::string_view fromShelf, std::string_
     if (fromShelf.empty() || toShelf.empty() || fromShelf == toShelf)
         return;
 
-    RemoveCheckedOutFile(fromShelf, relativePath);
+    RevertCheckedOutFile(fromShelf, relativePath);
     CheckOut(toShelf, std::string(relativePath));
 }
 
-void WorkspaceState::RemoveCheckedOutFile(std::string_view shelf, std::string_view relativePath)
+void WorkspaceState::RevertCheckedOutFile(std::string_view shelf, std::string_view relativePath)
 {
     for (auto shelfIterator = m_shelfFiles.begin(); shelfIterator != m_shelfFiles.end(); ++shelfIterator)
     {
@@ -143,7 +143,7 @@ void WorkspaceState::RemoveCheckedOutFile(std::string_view shelf, std::string_vi
     }
 }
 
-void WorkspaceState::RemoveShelf(std::string_view shelf)
+void WorkspaceState::DeleteShelf(std::string_view shelf)
 {
     m_shelfFiles.erase(std::remove_if(m_shelfFiles.begin(), m_shelfFiles.end(), [shelf](const ShelfWorkspaceFiles& shelfFiles) {
         return shelfFiles.shelf == shelf;
@@ -158,7 +158,7 @@ void WorkspaceState::ClearCheckedOutFiles()
     if (m_activeShelf.empty())
         m_shelfFiles.clear();
     else
-        RemoveShelf(m_activeShelf);
+        DeleteShelf(m_activeShelf);
 }
 
 std::string WorkspaceState::Escape(std::string_view text)

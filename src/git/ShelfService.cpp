@@ -230,20 +230,20 @@ static std::optional<bool> JsonBooleanValue(std::string_view json, std::string_v
     return std::nullopt;
 }
 
-static std::optional<int> PullRequestNumberFromUrl(std::string_view pullRequestUrl)
+static std::optional<int> ShelfNumberFromUrl(std::string_view shelfUrl)
 {
     constexpr std::string_view marker = "/pull/";
-    const size_t markerPosition = pullRequestUrl.rfind(marker);
+    const size_t markerPosition = shelfUrl.rfind(marker);
     if (markerPosition == std::string_view::npos)
         return std::nullopt;
 
     size_t valuePosition = markerPosition + marker.size();
     int value = 0;
     bool hasDigit = false;
-    while (valuePosition < pullRequestUrl.size() && std::isdigit(static_cast<unsigned char>(pullRequestUrl[valuePosition])))
+    while (valuePosition < shelfUrl.size() && std::isdigit(static_cast<unsigned char>(shelfUrl[valuePosition])))
     {
         hasDigit = true;
-        value = value * 10 + (pullRequestUrl[valuePosition] - '0');
+        value = value * 10 + (shelfUrl[valuePosition] - '0');
         ++valuePosition;
     }
 
@@ -346,7 +346,7 @@ static std::string GitHubApiHeaders(const std::string& token)
     return headers;
 }
 
-static std::string FindGitHubPullRequestUrl(const GitRepository& repository, std::string_view shelfBranch, bool logCommand, std::string_view state)
+static std::string FindGitHubShelfUrl(const GitRepository& repository, std::string_view shelfBranch, bool logCommand, std::string_view state)
 {
     if (shelfBranch.empty())
         return {};
@@ -355,20 +355,20 @@ static std::string FindGitHubPullRequestUrl(const GitRepository& repository, std
     if (!repositoryInfo.has_value())
     {
         if (logCommand)
-            std::cout << "Cannot find pull request: origin is not a GitHub remote.\n";
+            std::cout << "Cannot find shelf link: origin is not a GitHub remote.\n";
         return {};
     }
 
     const std::string token = GitHubAuthToken(repository, logCommand);
     const std::string branch = std::string(shelfBranch);
-    const std::string pullsUrl = "https://api.github.com/repos/" + repositoryInfo->ApiRepositoryPath() +
+    const std::string shelvesUrl = "https://api.github.com/repos/" + repositoryInfo->ApiRepositoryPath() +
         "/pulls?state=" + std::string(state) +
         "&head=" + UrlEncode(repositoryInfo->owner + ":" + branch) +
         "&base=main&sort=updated&direction=desc";
 
     const GitCommandResult result = RunExternalCommand(
-        "GitHub API: checking for an existing pull request",
-        "curl -sS " + GitHubApiHeaders(token) + ShellQuote(pullsUrl) + " 2>&1",
+        "GitHub API: checking for an existing shelf",
+        "curl -sS " + GitHubApiHeaders(token) + ShellQuote(shelvesUrl) + " 2>&1",
         logCommand,
         logCommand);
 
@@ -426,15 +426,15 @@ bool ShelfService::IsShelfValid(std::string_view shelfBranch, bool logCommand) c
     return m_repository->BranchExists(shelfBranch, logCommand);
 }
 
-std::string ShelfService::FindPullRequest(std::string_view shelfBranch, bool logCommand) const
+std::string ShelfService::FindShelfLink(std::string_view shelfBranch, bool logCommand) const
 {
     if (m_repository == nullptr || !IsShelfValid(shelfBranch, logCommand))
         return {};
 
-    return FindGitHubPullRequestUrl(*m_repository, shelfBranch, logCommand, "all");
+    return FindGitHubShelfUrl(*m_repository, shelfBranch, logCommand, "all");
 }
 
-std::vector<GitStatusEntry> ShelfService::PullRequestFiles(std::string_view shelfBranch, bool logCommand) const
+std::vector<GitStatusEntry> ShelfService::ShelfFiles(std::string_view shelfBranch, bool logCommand) const
 {
     std::vector<GitStatusEntry> files;
     if (m_repository == nullptr || !IsShelfValid(shelfBranch, logCommand))
@@ -522,7 +522,7 @@ bool ShelfService::ShelveFiles(std::string_view shelfBranch, const std::vector<s
     return addSucceeded && committed;
 }
 
-bool ShelfService::RemoveFileFromShelf(std::string_view shelfBranch, std::string_view file)
+bool ShelfService::RevertFileFromShelf(std::string_view shelfBranch, std::string_view file)
 {
     if (m_repository == nullptr || shelfBranch.empty() || file.empty() || !m_repository->BranchExists(shelfBranch))
         return false;
@@ -542,7 +542,7 @@ bool ShelfService::RemoveFileFromShelf(std::string_view shelfBranch, std::string
         shelfWorktree.Run("rm --ignore-unmatch -- " + Quote(fileText));
 
     const bool addSucceeded = shelfWorktree.Run("add -- " + Quote(fileText)).Succeeded();
-    const GitCommandResult commitResult = shelfWorktree.Run("commit -m " + Quote("Remove file from shelf"));
+    const GitCommandResult commitResult = shelfWorktree.Run("commit -m " + Quote("Revert file from shelf"));
     m_repository->Run("worktree remove --force " + Quote(worktreeRoot.string()));
 
     if (commitResult.Succeeded())
@@ -557,7 +557,65 @@ bool ShelfService::RemoveFileFromShelf(std::string_view shelfBranch, std::string
            commitResult.output.find("no changes added to commit") != std::string::npos;
 }
 
-std::string ShelfService::EnsurePullRequest(std::string_view shelfBranch)
+bool ShelfService::RestoreFileFromShelfToWorkingTree(std::string_view shelfBranch, std::string_view file)
+{
+    if (m_repository == nullptr || shelfBranch.empty() || file.empty() || !m_repository->BranchExists(shelfBranch))
+        return false;
+
+    const std::string fileText = std::string(file);
+    const std::string objectName = std::string(shelfBranch) + ":" + fileText;
+    if (m_repository->Run("cat-file -e " + Quote(objectName)).Succeeded())
+        return m_repository->Run("checkout " + Quote(shelfBranch) + " -- " + Quote(fileText)).Succeeded();
+
+    std::error_code error;
+    const std::filesystem::path filePath = m_repository->Root() / fileText;
+    if (std::filesystem::exists(filePath, error))
+        std::filesystem::remove(filePath, error);
+
+    return !error;
+}
+
+bool ShelfService::UndoLocalFileChanges(std::string_view file)
+{
+    if (m_repository == nullptr || file.empty())
+        return false;
+
+    const std::string fileText = std::string(file);
+    if (m_repository->Run("restore --staged --worktree -- " + Quote(fileText)).Succeeded())
+        return true;
+
+    return m_repository->Run("clean -f -- " + Quote(fileText)).Succeeded();
+}
+
+bool ShelfService::SubmitMain(const std::vector<std::string>& files, std::string_view summary, std::string_view description)
+{
+    if (m_repository == nullptr || files.empty() || summary.empty())
+        return false;
+
+    if (m_repository->CurrentBranch() != "main")
+    {
+        std::cout << "Cannot submit Main: current Git branch is not main.\n";
+        return false;
+    }
+
+    std::string addCommand = "add -A --";
+    for (const std::string& file : files)
+        addCommand += " " + Quote(file);
+
+    if (!m_repository->Run(addCommand).Succeeded())
+        return false;
+
+    std::string commitCommand = "commit -m " + Quote(summary);
+    if (!description.empty())
+        commitCommand += " -m " + Quote(description);
+
+    if (!m_repository->Run(commitCommand).Succeeded())
+        return false;
+
+    return m_repository->Run("push origin main").Succeeded();
+}
+
+std::string ShelfService::EnsureShelfLink(std::string_view shelfBranch)
 {
     if (m_repository == nullptr || shelfBranch.empty())
         return {};
@@ -568,25 +626,25 @@ std::string ShelfService::EnsurePullRequest(std::string_view shelfBranch)
     const std::optional<GitHubRepositoryInfo> repositoryInfo = ParseGitHubRemote(m_repository->RemoteUrl("origin"));
     if (!repositoryInfo.has_value())
     {
-        std::cout << "Cannot create pull request: origin is not a GitHub remote.\n";
+        std::cout << "Cannot create shelf link: origin is not a GitHub remote.\n";
         return {};
     }
 
     const std::string token = GitHubAuthToken(*m_repository);
     const std::string branch = std::string(shelfBranch);
-    const std::string pullsUrl = "https://api.github.com/repos/" + repositoryInfo->ApiRepositoryPath() +
+    const std::string shelvesUrl = "https://api.github.com/repos/" + repositoryInfo->ApiRepositoryPath() +
         "/pulls?state=open&head=" + UrlEncode(repositoryInfo->owner + ":" + branch) + "&base=main";
 
     const GitCommandResult existingResult = RunExternalCommand(
-        "GitHub API: checking for an existing open pull request",
-        "curl -sS " + GitHubApiHeaders(token) + ShellQuote(pullsUrl) + " 2>&1");
+        "GitHub API: checking for an existing shelf",
+        "curl -sS " + GitHubApiHeaders(token) + ShellQuote(shelvesUrl) + " 2>&1");
     const std::string existingUrl = JsonStringValue(existingResult.output, "html_url");
     if (!existingUrl.empty())
         return existingUrl;
 
     if (token.empty())
     {
-        std::cout << "Cannot create pull request: sign in with Git Credential Manager or set GH_TOKEN/GITHUB_TOKEN with GitHub repo access.\n";
+        std::cout << "Cannot create shelf link: sign in with Git Credential Manager or set GH_TOKEN/GITHUB_TOKEN with GitHub repo access.\n";
         return {};
     }
 
@@ -594,14 +652,14 @@ std::string ShelfService::EnsurePullRequest(std::string_view shelfBranch)
     std::error_code error;
     std::filesystem::create_directories(requestDirectory, error);
 
-    const std::filesystem::path requestPath = requestDirectory / "github-pr-create.json";
+    const std::filesystem::path requestPath = requestDirectory / "github-shelf-create.json";
     const std::string title = "Shelf: " + branch;
     const std::string body = "Created by p4v-git from shelf `" + branch + "`.";
     {
         std::ofstream requestFile(requestPath, std::ios::trunc);
         if (!requestFile.is_open())
         {
-            std::cout << "Cannot create pull request: failed to write GitHub API request file.\n";
+            std::cout << "Cannot create shelf link: failed to write GitHub API request file.\n";
             return {};
         }
 
@@ -616,7 +674,7 @@ std::string ShelfService::EnsurePullRequest(std::string_view shelfBranch)
     const std::string createUrl = "https://api.github.com/repos/" + repositoryInfo->ApiRepositoryPath() + "/pulls";
     const std::string dataArgument = "@" + requestPath.string();
     const GitCommandResult createResult = RunExternalCommand(
-        "GitHub API: creating pull request",
+        "GitHub API: creating shelf",
         "curl -sS -X POST " + GitHubApiHeaders(token) + ShellQuote(createUrl) + " --data-binary " + ShellQuote(dataArgument) + " 2>&1");
     const std::string createdUrl = JsonStringValue(createResult.output, "html_url");
     if (!createdUrl.empty())
@@ -624,12 +682,12 @@ std::string ShelfService::EnsurePullRequest(std::string_view shelfBranch)
 
     const std::string message = JsonStringValue(createResult.output, "message");
     if (!message.empty())
-        std::cout << "Cannot create pull request: " << message << '\n';
+        std::cout << "Cannot create shelf link: " << message << '\n';
 
     return {};
 }
 
-std::string ShelfService::ShelveFilesAndOpenPullRequest(std::string_view shelfBranch, const std::vector<std::string>& files)
+std::string ShelfService::ShelveFilesAndEnsureShelfLink(std::string_view shelfBranch, const std::vector<std::string>& files)
 {
     if (m_repository == nullptr || shelfBranch.empty())
         return {};
@@ -637,38 +695,38 @@ std::string ShelfService::ShelveFilesAndOpenPullRequest(std::string_view shelfBr
     if (!files.empty() && !ShelveFiles(shelfBranch, files))
         return {};
 
-    return EnsurePullRequest(shelfBranch);
+    return EnsureShelfLink(shelfBranch);
 }
 
-ShelfSubmitResult ShelfService::SubmitShelfAsPullRequest(std::string_view shelfBranch)
+ShelfSubmitResult ShelfService::SubmitShelf(std::string_view shelfBranch)
 {
     ShelfSubmitResult submitResult;
     if (m_repository == nullptr || shelfBranch.empty())
         return submitResult;
 
-    const std::string pullRequestUrl = EnsurePullRequest(shelfBranch);
-    if (pullRequestUrl.empty())
+    const std::string shelfUrl = EnsureShelfLink(shelfBranch);
+    if (shelfUrl.empty())
         return submitResult;
-    submitResult.pullRequestUrl = pullRequestUrl;
+    submitResult.shelfUrl = shelfUrl;
 
     const std::optional<GitHubRepositoryInfo> repositoryInfo = ParseGitHubRemote(m_repository->RemoteUrl("origin"));
     if (!repositoryInfo.has_value())
     {
-        std::cout << "Cannot merge pull request: origin is not a GitHub remote.\n";
+        std::cout << "Cannot submit shelf: origin is not a GitHub remote.\n";
         return submitResult;
     }
 
     const std::string token = GitHubAuthToken(*m_repository);
     if (token.empty())
     {
-        std::cout << "Cannot merge pull request: sign in with Git Credential Manager or set GH_TOKEN/GITHUB_TOKEN with GitHub repo access.\n";
+        std::cout << "Cannot submit shelf: sign in with Git Credential Manager or set GH_TOKEN/GITHUB_TOKEN with GitHub repo access.\n";
         return submitResult;
     }
 
-    const std::optional<int> pullRequestNumber = PullRequestNumberFromUrl(pullRequestUrl);
-    if (!pullRequestNumber.has_value())
+    const std::optional<int> shelfNumber = ShelfNumberFromUrl(shelfUrl);
+    if (!shelfNumber.has_value())
     {
-        std::cout << "Cannot merge pull request: failed to determine pull request number from " << pullRequestUrl << '\n';
+        std::cout << "Cannot submit shelf: failed to determine shelf number from " << shelfUrl << '\n';
         return submitResult;
     }
 
@@ -677,12 +735,12 @@ ShelfSubmitResult ShelfService::SubmitShelfAsPullRequest(std::string_view shelfB
     std::filesystem::create_directories(requestDirectory, error);
 
     const std::string branch = std::string(shelfBranch);
-    const std::filesystem::path requestPath = requestDirectory / "github-pr-merge.json";
+    const std::filesystem::path requestPath = requestDirectory / "github-shelf-merge.json";
     {
         std::ofstream requestFile(requestPath, std::ios::trunc);
         if (!requestFile.is_open())
         {
-            std::cout << "Cannot merge pull request: failed to write GitHub API request file.\n";
+            std::cout << "Cannot submit shelf: failed to write GitHub API request file.\n";
             return submitResult;
         }
 
@@ -694,16 +752,16 @@ ShelfSubmitResult ShelfService::SubmitShelfAsPullRequest(std::string_view shelfB
     }
 
     const std::string mergeUrl = "https://api.github.com/repos/" + repositoryInfo->ApiRepositoryPath() +
-        "/pulls/" + std::to_string(*pullRequestNumber) + "/merge";
+        "/pulls/" + std::to_string(*shelfNumber) + "/merge";
     const std::string dataArgument = "@" + requestPath.string();
     const GitCommandResult mergeResult = RunExternalCommand(
-        "GitHub API: merging pull request into main",
+        "GitHub API: submitting shelf into main",
         "curl -sS -X PUT " + GitHubApiHeaders(token) + ShellQuote(mergeUrl) + " --data-binary " + ShellQuote(dataArgument) + " 2>&1");
 
     const std::optional<bool> merged = JsonBooleanValue(mergeResult.output, "merged");
     if (merged.value_or(false))
     {
-        std::cout << "Merged pull request into main: " << pullRequestUrl << '\n';
+        std::cout << "Submitted shelf into main: " << shelfUrl << '\n';
         submitResult.merged = true;
         submitResult.branchDeleted = DeleteShelf(shelfBranch, true);
         return submitResult;
@@ -711,9 +769,9 @@ ShelfSubmitResult ShelfService::SubmitShelfAsPullRequest(std::string_view shelfB
 
     const std::string message = JsonStringValue(mergeResult.output, "message");
     if (!message.empty())
-        std::cout << "Cannot merge pull request: " << message << '\n';
+        std::cout << "Cannot submit shelf: " << message << '\n';
     else
-        std::cout << "Cannot merge pull request: GitHub did not report a successful merge.\n";
+        std::cout << "Cannot submit shelf: GitHub did not report a successful merge.\n";
 
     return submitResult;
 }

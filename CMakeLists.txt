@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(p4v-git
-    VERSION 0.1.0
+    VERSION 0.1.2
     DESCRIPTION "A P4V-style Git desktop client"
     LANGUAGES CXX
 )
@@ -13,6 +13,12 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 find_package(Vulkan REQUIRED)
+
+configure_file(
+    cmake/P4vGitVersion.h.in
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/P4vGitVersion.h"
+    @ONLY
+)
 
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -68,6 +74,10 @@ set(P4VGIT_SOURCES
     src/ui/widgets/imgui/ImGuiWidgets.cpp
 )
 
+set(P4VGIT_GENERATED_HEADERS
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/P4vGitVersion.h"
+)
+
 set(P4VGIT_HEADERS
     src/application/Application.h
     src/git/GitRepository.h
@@ -93,6 +103,7 @@ set(P4VGIT_HEADERS
 add_executable(p4v-git
     ${P4VGIT_SOURCES}
     ${P4VGIT_HEADERS}
+    ${P4VGIT_GENERATED_HEADERS}
 )
 
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "Source" FILES
@@ -100,7 +111,12 @@ source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "Source" FILES
     ${P4VGIT_HEADERS}
 )
 
+source_group("Generated" FILES
+    ${P4VGIT_GENERATED_HEADERS}
+)
+
 target_include_directories(p4v-git PRIVATE
+    "${CMAKE_CURRENT_BINARY_DIR}/generated"
     src
 )
 
