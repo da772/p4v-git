@@ -100,23 +100,46 @@ bool ShelfService::ShelveFiles(std::string_view shelfBranch, const std::vector<s
     return addSucceeded && committed;
 }
 
-std::string ShelfService::ShareShelfAsPullRequest(std::string_view shelfBranch)
+std::string ShelfService::PullRequestUrl(std::string_view shelfBranch) const
 {
     if (m_repository == nullptr || shelfBranch.empty())
-        return {};
-
-    if (!m_repository->Run("push -u origin " + Quote(shelfBranch)).Succeeded())
         return {};
 
     return ToGitHubPullRequestUrl(m_repository->RemoteUrl("origin"), shelfBranch);
 }
 
-std::string ShelfService::SubmitShelfUrl(std::string_view shelfBranch)
+std::string ShelfService::ShelveFilesAndOpenPullRequest(std::string_view shelfBranch, const std::vector<std::string>& files)
 {
     if (m_repository == nullptr || shelfBranch.empty())
         return {};
 
-    return ToGitHubPullRequestUrl(m_repository->RemoteUrl("origin"), shelfBranch);
+    if (!files.empty() && !ShelveFiles(shelfBranch, files))
+        return {};
+
+    if (!m_repository->Run("push -u origin " + Quote(shelfBranch)).Succeeded())
+        return {};
+
+    return PullRequestUrl(shelfBranch);
+}
+
+bool ShelfService::SubmitShelf(std::string_view shelfBranch)
+{
+    if (m_repository == nullptr || shelfBranch.empty())
+        return false;
+
+    const std::string currentBranch = m_repository->CurrentBranch();
+    bool succeeded = m_repository->Run("switch main").Succeeded();
+    if (succeeded)
+        succeeded = m_repository->Run("pull --ff-only origin main").Succeeded();
+    if (succeeded)
+        succeeded = m_repository->Run("merge --no-ff " + Quote(shelfBranch) + " -m " + Quote("Submit " + std::string(shelfBranch))).Succeeded();
+    if (succeeded)
+        succeeded = m_repository->Run("push origin main").Succeeded();
+
+    if (!currentBranch.empty() && currentBranch != "main")
+        m_repository->Run("switch " + Quote(currentBranch));
+
+    return succeeded;
 }
 
 bool ShelfService::DeleteShelf(std::string_view shelfBranch, bool deleteRemote)

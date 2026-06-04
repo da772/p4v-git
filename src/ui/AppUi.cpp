@@ -1,6 +1,7 @@
 #include "ui/AppUi.h"
 
 #include "log/StdoutLog.h"
+#include "platform/UrlLauncher.h"
 #include "ui/widgets/Widgets.h"
 
 #include <algorithm>
@@ -26,6 +27,8 @@ void AppUi::SetStdoutLog(const StdoutLog* stdoutLog)
 
 void AppUi::Draw()
 {
+    RefreshRepositoryDataIfNeeded();
+
     constexpr std::array defaultLayout = {
         ui::widgets::DockspaceDefaultLayout{ "Log", ui::widgets::DockspaceSide::Down, 30.0f },
         ui::widgets::DockspaceDefaultLayout{ "Workspace Explorer", ui::widgets::DockspaceSide::Left, 24.0f },
@@ -111,12 +114,12 @@ void AppUi::DrawFileChanges()
             ShelveSelectedFiles();
 
         ui::widgets::SameLine();
-        if (ui::widgets::Button("Share PR") && shelfSelected)
-            ShareSelectedShelfAsPullRequest();
+        if (ui::widgets::Button("Open PR") && shelfSelected)
+            OpenSelectedPullRequest();
 
         ui::widgets::SameLine();
-        if (ui::widgets::Button("Submit PR") && shelfSelected)
-            OpenSubmitPullRequest();
+        if (ui::widgets::Button("Submit") && shelfSelected)
+            SubmitSelectedShelf();
 
         ui::widgets::SameLine();
         if (ui::widgets::Button("Delete Shelf") && shelfSelected)
@@ -144,7 +147,7 @@ void AppUi::DrawLog()
     if (ui::widgets::BeginWindow("Log"))
     {
         ui::widgets::DrawWindowHeader("Log");
-        ui::widgets::BeginScrollRegion("LogScroll");
+        ui::widgets::BeginScrollRegion("LogScroll", true);
 
         if (m_stdoutLog != nullptr)
         {
@@ -282,11 +285,23 @@ void AppUi::RefreshRepositoryData()
     if (!m_repository.has_value())
         return;
 
+    m_workspaceState.Load(m_sourcePath);
     m_shelves = m_shelfService.Shelves();
     m_statusEntries = m_repository->Status();
+    m_lastRefreshTime = std::chrono::steady_clock::now();
 
     if (m_selectedBranch != "main" && std::find(m_shelves.begin(), m_shelves.end(), m_selectedBranch) == m_shelves.end())
         m_selectedBranch = "main";
+}
+
+void AppUi::RefreshRepositoryDataIfNeeded()
+{
+    if (!m_repository.has_value())
+        return;
+
+    const auto now = std::chrono::steady_clock::now();
+    if (m_lastRefreshTime.time_since_epoch().count() == 0 || now - m_lastRefreshTime >= std::chrono::seconds(3))
+        RefreshRepositoryData();
 }
 
 void AppUi::DrawShelfSelector()
@@ -336,31 +351,38 @@ void AppUi::ShelveSelectedFiles()
     if (!HasWritableShelfSelected())
         return;
 
-    if (m_shelfService.ShelveFiles(m_selectedBranch, m_workspaceState.CheckedOutFiles()))
+    m_pullRequestLink = m_shelfService.ShelveFilesAndOpenPullRequest(m_selectedBranch, m_workspaceState.CheckedOutFiles());
+    if (!m_pullRequestLink.empty())
     {
-        std::cout << "Shelved files into " << m_selectedBranch << '\n';
+        std::cout << "Shelved files and opened PR link: " << m_pullRequestLink << '\n';
         RefreshRepositoryData();
     }
 }
 
-void AppUi::ShareSelectedShelfAsPullRequest()
+void AppUi::OpenSelectedPullRequest()
 {
     if (!HasWritableShelfSelected())
         return;
 
-    m_pullRequestLink = m_shelfService.ShareShelfAsPullRequest(m_selectedBranch);
+    m_pullRequestLink = m_shelfService.PullRequestUrl(m_selectedBranch);
     if (!m_pullRequestLink.empty())
-        std::cout << "Shelf pull request link: " << m_pullRequestLink << '\n';
+    {
+        std::cout << "Open PR: " << m_pullRequestLink << '\n';
+        if (!OpenUrl(m_pullRequestLink))
+            std::cout << "Failed to open PR link in browser\n";
+    }
 }
 
-void AppUi::OpenSubmitPullRequest()
+void AppUi::SubmitSelectedShelf()
 {
     if (!HasWritableShelfSelected())
         return;
 
-    m_pullRequestLink = m_shelfService.SubmitShelfUrl(m_selectedBranch);
-    if (!m_pullRequestLink.empty())
-        std::cout << "Submit shelf through PR: " << m_pullRequestLink << '\n';
+    if (m_shelfService.SubmitShelf(m_selectedBranch))
+    {
+        std::cout << "Submitted shelf to main: " << m_selectedBranch << '\n';
+        RefreshRepositoryData();
+    }
 }
 
 void AppUi::DeleteSelectedShelf()
