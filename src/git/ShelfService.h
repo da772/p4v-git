@@ -24,6 +24,7 @@ public:
     std::vector<std::string> Shelves(bool logCommand = true) const;
     bool IsShelfValid(std::string_view shelfBranch, bool logCommand = true) const;
     std::string FindPullRequest(std::string_view shelfBranch, bool logCommand = true) const;
+    std::vector<GitStatusEntry> PullRequestFiles(std::string_view shelfBranch, bool logCommand = true) const;
     bool CreateShelf(std::string_view shelfName);
     bool ShelveFiles(std::string_view shelfBranch, const std::vector<std::string>& files);
     bool RemoveFileFromShelf(std::string_view shelfBranch, std::string_view file);

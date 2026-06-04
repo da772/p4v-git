@@ -26,6 +26,7 @@ struct DockspaceDefaultLayout
 
 extern void DrawDockspace();
 extern void DrawDockspace(std::span<const DockspaceDefaultLayout> defaultLayout);
+extern float FrameRate();
 extern bool BeginWindow(std::string_view title);
 extern void EndWindow();
 extern void DrawWindowHeader(std::string_view title);
@@ -38,7 +39,7 @@ extern bool Selectable(std::string_view label, bool selected);
 extern void EndCombo();
 extern void SameLine();
 extern void Separator();
-extern bool BeginTreeNode(std::string_view label);
+extern bool BeginTreeNode(std::string_view label, bool autoOpen = false);
 extern void EndTreeNode();
 extern void TreeLeaf(std::string_view label);
 extern bool BeginContextMenuForLastItem();

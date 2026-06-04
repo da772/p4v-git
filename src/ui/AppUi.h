@@ -22,6 +22,12 @@ struct ShelfPullRequestLink
     std::string url;
 };
 
+struct ShelfPullRequestFiles
+{
+    std::string shelf;
+    std::vector<GitStatusEntry> files;
+};
+
 class AppUi
 {
 public:
@@ -40,16 +46,24 @@ private:
     void CheckOutFile(const std::filesystem::path& path);
     void RefreshRepositoryData(bool logCommands = true);
     void RefreshRepositoryDataIfNeeded();
+    void PruneInvalidWorkspaceShelves();
     void DrawShelfList();
     void DrawShelfPanel(const std::string& shelf, bool isMainShelf);
     void DrawShelfFile(const std::string& shelf, const std::string& file);
+    void DrawPullRequestFile(const std::string& shelf, const GitStatusEntry& file);
     void SelectShelf(std::string_view shelf);
     void ClearSelectedShelf();
     void RefreshPullRequestLinks(bool logCommands);
+    void RefreshPullRequestFiles(bool logCommands);
     void SetPullRequestLink(std::string_view shelf, std::string url);
     std::string PullRequestLink(std::string_view shelf) const;
+    std::vector<GitStatusEntry> PullRequestFiles(std::string_view shelf) const;
+    std::vector<std::string> MainActiveFiles() const;
+    bool IsFileActiveInShelf(std::string_view relativePath) const;
+    bool IsFileActive(std::string_view relativePath) const;
     void MoveCheckedOutFile(std::string_view payload, std::string_view toShelf);
     void RemoveCheckedOutFile(const std::string& shelf, const std::string& file);
+    void RemovePullRequestFile(const std::string& shelf, const std::string& file);
     void CreateShelfFromInput();
     void ShelveShelf(const std::string& shelf);
     void SubmitShelf(const std::string& shelf);
@@ -66,7 +80,9 @@ private:
     bool m_hasSourcePath = false;
     std::string m_sourcePathError;
     std::string m_selectedBranch;
+    std::string m_currentGitBranch;
     std::vector<ShelfPullRequestLink> m_pullRequestLinks;
+    std::vector<ShelfPullRequestFiles> m_pullRequestFiles;
     std::optional<GitRepository> m_repository;
     ShelfService m_shelfService;
     WorkspaceState m_workspaceState;

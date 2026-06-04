@@ -105,8 +105,17 @@ void WorkspaceState::CheckOut(std::string relativePath)
 
 void WorkspaceState::CheckOut(std::string_view shelf, std::string relativePath)
 {
-    if (shelf.empty() || IsCheckedOut(shelf, relativePath))
+    if (shelf.empty())
         return;
+
+    for (auto shelfIterator = m_shelfFiles.begin(); shelfIterator != m_shelfFiles.end();)
+    {
+        shelfIterator->files.erase(std::remove(shelfIterator->files.begin(), shelfIterator->files.end(), relativePath), shelfIterator->files.end());
+        if (shelfIterator->files.empty())
+            shelfIterator = m_shelfFiles.erase(shelfIterator);
+        else
+            ++shelfIterator;
+    }
 
     MutableCheckedOutFiles(shelf).push_back(std::move(relativePath));
 }
