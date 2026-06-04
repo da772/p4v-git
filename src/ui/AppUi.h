@@ -2,6 +2,7 @@
 
 #include <array>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <future>
 #include <optional>
@@ -17,13 +18,13 @@ namespace p4vgit
 {
 class StdoutLog;
 
-struct ShelfPullRequestLink
+struct ShelfLinkEntry
 {
     std::string shelf;
     std::string url;
 };
 
-struct ShelfPullRequestFiles
+struct ShelfCommittedFileList
 {
     std::string shelf;
     std::vector<GitStatusEntry> files;
@@ -39,18 +40,23 @@ struct RepositorySnapshot
     std::vector<std::string> shelves;
     std::vector<GitStatusEntry> statusEntries;
     std::string currentBranch;
-    std::vector<ShelfPullRequestLink> pullRequestLinks;
-    std::vector<ShelfPullRequestFiles> pullRequestFiles;
+    std::vector<ShelfLinkEntry> shelfLinks;
+    std::vector<ShelfCommittedFileList> shelfFiles;
+    uint64_t refreshGeneration = 0;
 };
 
 struct ShelfJobResult
 {
     std::string shelf;
-    std::string pullRequestUrl;
+    std::string shelfUrl;
     std::string file;
+    std::vector<std::string> files;
     bool succeeded = false;
-    bool removeShelfState = false;
-    bool removeFileState = false;
+    bool addFileState = false;
+    bool clearMainActiveFiles = false;
+    bool deleteShelfState = false;
+    bool revertActiveFileState = false;
+    bool removeShelfFileState = false;
     bool selectShelf = false;
     bool refreshAfter = true;
     ShelfSubmitResult submit;
@@ -63,21 +69,32 @@ struct ShelfJob
     std::future<ShelfJobResult> future;
 };
 
+enum class ConfirmationAction
+{
+    None,
+    RevertActiveFile,
+    RestoreShelfFile,
+};
+
 class AppUi
 {
 public:
     AppUi();
 
     void SetStdoutLog(const StdoutLog* stdoutLog);
+    void OnWindowFocusGained();
     void Draw();
 
 private:
-    static RepositorySnapshot LoadRepositorySnapshot(const std::filesystem::path& selectedPath, bool discoverRepository, bool logCommands);
+    static RepositorySnapshot LoadRepositorySnapshot(const std::filesystem::path& selectedPath, bool discoverRepository, bool logCommands, uint64_t refreshGeneration);
     static ShelfJobResult RunCreateShelfJob(const std::filesystem::path& repoRoot, std::string shelfName);
     static ShelfJobResult RunShelveShelfJob(const std::filesystem::path& repoRoot, std::string shelf, std::vector<std::string> files);
     static ShelfJobResult RunSubmitShelfJob(const std::filesystem::path& repoRoot, std::string shelf);
+    static ShelfJobResult RunSubmitMainJob(const std::filesystem::path& repoRoot, std::vector<std::string> files, std::string summary, std::string description);
     static ShelfJobResult RunDeleteShelfJob(const std::filesystem::path& repoRoot, std::string shelf);
-    static ShelfJobResult RunRemovePullRequestFileJob(const std::filesystem::path& repoRoot, std::string shelf, std::string file);
+    static ShelfJobResult RunRevertShelfFileJob(const std::filesystem::path& repoRoot, std::string shelf, std::string file);
+    static ShelfJobResult RunRevertActiveFileJob(const std::filesystem::path& repoRoot, std::string shelf, std::string file);
+    static ShelfJobResult RunRestoreShelfFileJob(const std::filesystem::path& repoRoot, std::string shelf, std::string file);
 
     void PollAsyncOperations();
     void ApplyRepositorySnapshot(const RepositorySnapshot& snapshot);
@@ -85,6 +102,12 @@ private:
     void StartShelfJob(std::string shelf, std::string label, std::future<ShelfJobResult> future);
     bool IsShelfBusy(std::string_view shelf) const;
     std::string ShelfBusyLabel(std::string_view shelf) const;
+    void RequestConfirmation(ConfirmationAction action, std::string shelf, std::string file);
+    void DrawConfirmationPopup();
+    void ConfirmPendingAction();
+    void ClearPendingConfirmation();
+    void OpenMainSubmitPopup();
+    void DrawMainSubmitPopup();
     void DrawWorkspaceExplorer();
     void DrawFileChanges();
     void DrawLog();
@@ -94,27 +117,33 @@ private:
     void CheckOutFile(const std::filesystem::path& path);
     void RefreshRepositoryData(bool logCommands = true);
     void RefreshRepositoryDataIfNeeded();
+    void RequestRepositoryRefresh();
     void PruneInvalidWorkspaceShelves();
     void DrawShelfList();
     void DrawShelfPanel(const std::string& shelf, bool isMainShelf);
     void DrawShelfFile(const std::string& shelf, const std::string& file);
-    void DrawPullRequestFile(const std::string& shelf, const GitStatusEntry& file);
+    void DrawShelfCommittedFile(const std::string& shelf, const GitStatusEntry& file);
     void SelectShelf(std::string_view shelf);
     void ClearSelectedShelf();
-    void SetPullRequestLink(std::string_view shelf, std::string url);
-    std::string PullRequestLink(std::string_view shelf) const;
-    std::vector<GitStatusEntry> PullRequestFiles(std::string_view shelf) const;
+    void SetShelfLink(std::string_view shelf, std::string url);
+    std::string ShelfLink(std::string_view shelf) const;
+    std::vector<GitStatusEntry> ShelfFiles(std::string_view shelf) const;
     std::vector<std::string> MainActiveFiles() const;
+    std::vector<std::string> MainSubmittableFiles() const;
+    std::optional<std::string> ActiveShelfForFile(std::string_view relativePath) const;
     bool IsFileActiveInShelf(std::string_view relativePath) const;
+    bool HasLocalChanges(std::string_view relativePath) const;
     bool IsFileActive(std::string_view relativePath) const;
     void MoveCheckedOutFile(std::string_view payload, std::string_view toShelf);
-    void RemoveCheckedOutFile(const std::string& shelf, const std::string& file);
-    void RemovePullRequestFile(const std::string& shelf, const std::string& file);
+    void RevertCheckedOutFile(const std::string& shelf, const std::string& file);
+    void RevertShelfFile(const std::string& shelf, const std::string& file);
+    void RestoreShelfFile(const std::string& shelf, const std::string& file);
     void CreateShelfFromInput();
     void ShelveShelf(const std::string& shelf);
     void SubmitShelf(const std::string& shelf);
+    void SubmitMainFromPopup();
     void DeleteShelf(const std::string& shelf);
-    void OpenPullRequestLink(std::string_view shelf);
+    void OpenShelfLink(std::string_view shelf);
     std::string RelativePath(const std::filesystem::path& path) const;
     std::string FileLabel(const std::filesystem::path& path) const;
     static std::string PathLabel(const std::filesystem::path& path);
@@ -122,13 +151,15 @@ private:
     const StdoutLog* m_stdoutLog = nullptr;
     std::array<char, 1024> m_sourcePathInput = {};
     std::array<char, 128> m_newShelfNameInput = {};
+    std::array<char, 256> m_mainSubmitSummaryInput = {};
+    std::array<char, 2048> m_mainSubmitDescriptionInput = {};
     std::filesystem::path m_sourcePath;
     bool m_hasSourcePath = false;
     std::string m_sourcePathError;
     std::string m_selectedBranch;
     std::string m_currentGitBranch;
-    std::vector<ShelfPullRequestLink> m_pullRequestLinks;
-    std::vector<ShelfPullRequestFiles> m_pullRequestFiles;
+    std::vector<ShelfLinkEntry> m_shelfLinks;
+    std::vector<ShelfCommittedFileList> m_shelfFiles;
     std::optional<GitRepository> m_repository;
     ShelfService m_shelfService;
     WorkspaceState m_workspaceState;
@@ -138,6 +169,15 @@ private:
     std::optional<std::future<RepositorySnapshot>> m_repositoryLoadFuture;
     std::optional<std::future<RepositorySnapshot>> m_refreshFuture;
     std::vector<ShelfJob> m_shelfJobs;
+    uint64_t m_refreshGeneration = 0;
+    uint64_t m_gitMutationGeneration = 0;
+    bool m_refreshAfterJobs = false;
+    ConfirmationAction m_confirmationAction = ConfirmationAction::None;
+    std::string m_confirmationShelf;
+    std::string m_confirmationFile;
+    bool m_openConfirmationPopup = false;
+    bool m_openMainSubmitPopup = false;
+    std::string m_mainSubmitError;
     bool m_logAutoScroll = true;
 };
 }

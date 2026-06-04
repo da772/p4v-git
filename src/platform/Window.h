@@ -31,6 +31,7 @@ public:
     virtual bool ShouldClose() const = 0;
     virtual void PollEvents() = 0;
     virtual bool IsMinimized() const = 0;
+    virtual bool IsFocused() const = 0;
     virtual void Sleep(int milliseconds) const = 0;
     virtual float ContentScale() const = 0;
     virtual FramebufferSize GetFramebufferSize() const = 0;

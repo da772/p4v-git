@@ -77,6 +77,11 @@ bool GlfwWindow::IsMinimized() const
     return glfwGetWindowAttrib(m_window, GLFW_ICONIFIED) != 0;
 }
 
+bool GlfwWindow::IsFocused() const
+{
+    return glfwGetWindowAttrib(m_window, GLFW_FOCUSED) != 0;
+}
+
 void GlfwWindow::Sleep(int milliseconds) const
 {
     ImGui_ImplGlfw_Sleep(milliseconds);

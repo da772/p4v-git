@@ -177,6 +177,12 @@ bool InputText(std::string_view label, char* buffer, size_t bufferSize)
     return ImGui::InputText(labelText.c_str(), buffer, bufferSize);
 }
 
+bool InputTextMultiline(std::string_view label, char* buffer, size_t bufferSize)
+{
+    const std::string labelText = ToString(label);
+    return ImGui::InputTextMultiline(labelText.c_str(), buffer, bufferSize, ImVec2(420.0f, 120.0f));
+}
+
 void BeginDisabled(bool disabled)
 {
     ImGui::BeginDisabled(disabled);
@@ -256,6 +262,28 @@ bool MenuItem(std::string_view label, bool enabled)
 void EndContextMenu()
 {
     ImGui::EndPopup();
+}
+
+void OpenPopup(std::string_view id)
+{
+    const std::string idText = ToString(id);
+    ImGui::OpenPopup(idText.c_str());
+}
+
+bool BeginModal(std::string_view id)
+{
+    const std::string idText = ToString(id);
+    return ImGui::BeginPopupModal(idText.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+}
+
+void EndModal()
+{
+    ImGui::EndPopup();
+}
+
+void CloseCurrentPopup()
+{
+    ImGui::CloseCurrentPopup();
 }
 
 bool DragDropSource(std::string_view type, std::string_view payload, std::string_view label)

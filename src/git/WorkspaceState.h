@@ -30,8 +30,8 @@ public:
     void CheckOut(std::string relativePath);
     void CheckOut(std::string_view shelf, std::string relativePath);
     void MoveCheckedOutFile(std::string_view fromShelf, std::string_view toShelf, std::string_view relativePath);
-    void RemoveCheckedOutFile(std::string_view shelf, std::string_view relativePath);
-    void RemoveShelf(std::string_view shelf);
+    void RevertCheckedOutFile(std::string_view shelf, std::string_view relativePath);
+    void DeleteShelf(std::string_view shelf);
     void ClearCheckedOutFiles();
 
 private:
