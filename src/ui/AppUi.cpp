@@ -1067,7 +1067,6 @@ void AppUi::DrawShelfPanel(const std::string& shelf, bool isMainShelf)
 
     const std::vector<std::string> mainFiles = isMainShelf ? MainActiveFiles() : std::vector<std::string>{};
     const std::vector<std::string>& files = isMainShelf ? mainFiles : m_workspaceState.CheckedOutFiles(shelf);
-    ui::widgets::Text("Active Changes");
     if (files.empty())
     {
         ui::widgets::Text("No active changes assigned to this shelf.");
