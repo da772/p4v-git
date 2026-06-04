@@ -41,7 +41,7 @@ private:
     void RefreshRepositoryData(bool logCommands = true);
     void RefreshRepositoryDataIfNeeded();
     void DrawShelfList();
-    void DrawShelfPanel(const std::string& shelf);
+    void DrawShelfPanel(const std::string& shelf, bool isMainShelf);
     void DrawShelfFile(const std::string& shelf, const std::string& file);
     void SelectShelf(std::string_view shelf);
     void ClearSelectedShelf();
@@ -55,7 +55,6 @@ private:
     void SubmitShelf(const std::string& shelf);
     void DeleteShelf(const std::string& shelf);
     void OpenPullRequestLink(std::string_view shelf);
-    bool HasWritableShelfSelected() const;
     std::string RelativePath(const std::filesystem::path& path) const;
     std::string FileLabel(const std::filesystem::path& path) const;
     static std::string PathLabel(const std::filesystem::path& path);
