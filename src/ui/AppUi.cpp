@@ -494,6 +494,7 @@ void AppUi::DrawMainSubmitPopup()
 
     const std::vector<std::string> files = MainSubmittableFiles();
     ui::widgets::Text("Submit local Main changes.");
+    ui::widgets::Text("Main will be pulled before submitting.");
     ui::widgets::Text(std::to_string(files.size()) + " file(s)");
     if (m_currentGitBranch != "main")
         ui::widgets::Text("Checkout main branch to submit Main.");
