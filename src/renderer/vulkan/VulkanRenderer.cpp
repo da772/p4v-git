@@ -2,6 +2,7 @@
 
 #include "imgui.h"
 #include "imgui_impl_vulkan.h"
+#include "P4vGitVersion.h"
 #include "platform/Window.h"
 
 #include <cstdio>
@@ -168,10 +169,10 @@ void VulkanRenderer::SetupVulkan(Window& window)
     {
         VkApplicationInfo app_info = {};
         app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-        app_info.pApplicationName = "p4v-git";
-        app_info.applicationVersion = VK_MAKE_VERSION(0, 1, 0);
-        app_info.pEngineName = "p4v-git";
-        app_info.engineVersion = VK_MAKE_VERSION(0, 1, 0);
+        app_info.pApplicationName = P4VGIT_APP_NAME;
+        app_info.applicationVersion = VK_MAKE_VERSION(P4VGIT_VERSION_MAJOR, P4VGIT_VERSION_MINOR, P4VGIT_VERSION_PATCH);
+        app_info.pEngineName = P4VGIT_APP_NAME;
+        app_info.engineVersion = VK_MAKE_VERSION(P4VGIT_VERSION_MAJOR, P4VGIT_VERSION_MINOR, P4VGIT_VERSION_PATCH);
         app_info.apiVersion = VK_API_VERSION_1_0;
 
         VkInstanceCreateInfo create_info = {};

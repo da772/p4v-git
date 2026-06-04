@@ -32,5 +32,6 @@ private:
     std::unique_ptr<GuiLayer> m_guiLayer;
     StdoutLog m_stdoutLog;
     AppUi m_appUi;
+    bool m_wasWindowFocused = false;
 };
 }

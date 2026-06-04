@@ -20,6 +20,7 @@ public:
     bool ShouldClose() const override;
     void PollEvents() override;
     bool IsMinimized() const override;
+    bool IsFocused() const override;
     void Sleep(int milliseconds) const override;
     float ContentScale() const override;
     FramebufferSize GetFramebufferSize() const override;

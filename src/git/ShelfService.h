@@ -9,7 +9,7 @@ namespace p4vgit
 {
 struct ShelfSubmitResult
 {
-    std::string pullRequestUrl;
+    std::string shelfUrl;
     bool merged = false;
     bool branchDeleted = false;
 };
@@ -23,14 +23,17 @@ public:
     std::string MakeShelfBranch(std::string_view shelfName) const;
     std::vector<std::string> Shelves(bool logCommand = true) const;
     bool IsShelfValid(std::string_view shelfBranch, bool logCommand = true) const;
-    std::string FindPullRequest(std::string_view shelfBranch, bool logCommand = true) const;
-    std::vector<GitStatusEntry> PullRequestFiles(std::string_view shelfBranch, bool logCommand = true) const;
+    std::string FindShelfLink(std::string_view shelfBranch, bool logCommand = true) const;
+    std::vector<GitStatusEntry> ShelfFiles(std::string_view shelfBranch, bool logCommand = true) const;
     bool CreateShelf(std::string_view shelfName);
     bool ShelveFiles(std::string_view shelfBranch, const std::vector<std::string>& files);
-    bool RemoveFileFromShelf(std::string_view shelfBranch, std::string_view file);
-    std::string EnsurePullRequest(std::string_view shelfBranch);
-    std::string ShelveFilesAndOpenPullRequest(std::string_view shelfBranch, const std::vector<std::string>& files);
-    ShelfSubmitResult SubmitShelfAsPullRequest(std::string_view shelfBranch);
+    bool RevertFileFromShelf(std::string_view shelfBranch, std::string_view file);
+    bool RestoreFileFromShelfToWorkingTree(std::string_view shelfBranch, std::string_view file);
+    bool UndoLocalFileChanges(std::string_view file);
+    bool SubmitMain(const std::vector<std::string>& files, std::string_view summary, std::string_view description);
+    std::string EnsureShelfLink(std::string_view shelfBranch);
+    std::string ShelveFilesAndEnsureShelfLink(std::string_view shelfBranch, const std::vector<std::string>& files);
+    ShelfSubmitResult SubmitShelf(std::string_view shelfBranch);
     bool DeleteShelf(std::string_view shelfBranch, bool deleteRemote);
 
 private:

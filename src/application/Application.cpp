@@ -3,6 +3,7 @@
 #include "gui/GuiFactory.h"
 #include "gui/GuiLayer.h"
 #include "platform/WindowFactory.h"
+#include "P4vGitVersion.h"
 #include "renderer/Renderer.h"
 #include "renderer/RendererFactory.h"
 
@@ -35,8 +36,9 @@ bool Application::Initialize()
     m_appUi.SetStdoutLog(&m_stdoutLog);
 
     m_window = CreateWindow(WindowBackend::Glfw);
-    if (m_window == nullptr || !m_window->Initialize({ "p4v-git", 1280, 800 }))
+    if (m_window == nullptr || !m_window->Initialize({ P4VGIT_DISPLAY_NAME, 1280, 800 }))
         return false;
+    m_wasWindowFocused = m_window->IsFocused();
 
     m_renderer = CreateRenderer(RendererApi::Vulkan);
     m_renderer->Initialize(*m_window);
@@ -44,7 +46,7 @@ bool Application::Initialize()
     m_guiLayer = CreateGuiLayer(GuiBackend::ImGui);
     m_guiLayer->Initialize(*m_window, *m_renderer);
 
-    std::cout << "p4v-git started\n";
+    std::cout << P4VGIT_DISPLAY_NAME << " started\n";
     return true;
 }
 
@@ -53,6 +55,10 @@ void Application::MainLoop()
     while (!m_window->ShouldClose())
     {
         m_window->PollEvents();
+        const bool windowFocused = m_window->IsFocused();
+        if (windowFocused && !m_wasWindowFocused)
+            m_appUi.OnWindowFocusGained();
+        m_wasWindowFocused = windowFocused;
 
         m_renderer->ResizeIfNeeded(*m_window);
 
