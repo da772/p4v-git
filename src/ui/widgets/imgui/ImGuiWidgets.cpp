@@ -235,7 +235,7 @@ void EndContextMenu()
 
 bool DragDropSource(std::string_view type, std::string_view payload, std::string_view label)
 {
-    if (!ImGui::BeginDragDropSource())
+    if (!ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID))
         return false;
 
     const std::string typeText = ToString(type);
