@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <chrono>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -31,11 +32,12 @@ private:
     void DrawFileEntry(const std::filesystem::directory_entry& entry);
     void CheckOutFile(const std::filesystem::path& path);
     void RefreshRepositoryData();
+    void RefreshRepositoryDataIfNeeded();
     void DrawShelfSelector();
     void CreateShelfFromInput();
     void ShelveSelectedFiles();
-    void ShareSelectedShelfAsPullRequest();
-    void OpenSubmitPullRequest();
+    void OpenSelectedPullRequest();
+    void SubmitSelectedShelf();
     void DeleteSelectedShelf();
     bool HasWritableShelfSelected() const;
     std::string RelativePath(const std::filesystem::path& path) const;
@@ -55,5 +57,6 @@ private:
     WorkspaceState m_workspaceState;
     std::vector<std::string> m_shelves;
     std::vector<GitStatusEntry> m_statusEntries;
+    std::chrono::steady_clock::time_point m_lastRefreshTime = {};
 };
 }

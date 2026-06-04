@@ -17,8 +17,9 @@ public:
     std::vector<std::string> Shelves() const;
     bool CreateShelf(std::string_view shelfName);
     bool ShelveFiles(std::string_view shelfBranch, const std::vector<std::string>& files);
-    std::string ShareShelfAsPullRequest(std::string_view shelfBranch);
-    std::string SubmitShelfUrl(std::string_view shelfBranch);
+    std::string PullRequestUrl(std::string_view shelfBranch) const;
+    std::string ShelveFilesAndOpenPullRequest(std::string_view shelfBranch, const std::vector<std::string>& files);
+    bool SubmitShelf(std::string_view shelfBranch);
     bool DeleteShelf(std::string_view shelfBranch, bool deleteRemote);
 
 private:

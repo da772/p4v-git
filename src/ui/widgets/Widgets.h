@@ -42,6 +42,7 @@ extern bool BeginContextMenuForLastItem();
 extern bool MenuItem(std::string_view label, bool enabled);
 extern void EndContextMenu();
 extern void BeginScrollRegion(std::string_view id);
+extern void BeginScrollRegion(std::string_view id, bool scrollToBottom);
 extern void EndScrollRegion();
 extern void ShowDemoWindow(bool* open);
 }
