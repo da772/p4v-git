@@ -177,6 +177,24 @@ bool InputText(std::string_view label, char* buffer, size_t bufferSize)
     return ImGui::InputText(labelText.c_str(), buffer, bufferSize);
 }
 
+void BeginDisabled(bool disabled)
+{
+    ImGui::BeginDisabled(disabled);
+}
+
+void EndDisabled()
+{
+    ImGui::EndDisabled();
+}
+
+void Spinner(std::string_view label)
+{
+    constexpr char frames[] = { '|', '/', '-', '\\' };
+    const int frame = static_cast<int>(ImGui::GetTime() * 10.0) % 4;
+    const std::string labelText = ToString(label);
+    ImGui::Text("%c %s", frames[frame], labelText.c_str());
+}
+
 bool BeginCombo(std::string_view label, std::string_view preview)
 {
     const std::string labelText = ToString(label);
