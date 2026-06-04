@@ -111,18 +111,22 @@ void AppUi::DrawFileChanges()
             ShelveSelectedFiles();
 
         ui::widgets::SameLine();
-        if (ui::widgets::Button("Share Shelf") && shelfSelected)
-            ShareSelectedShelf();
+        if (ui::widgets::Button("Share PR") && shelfSelected)
+            ShareSelectedShelfAsPullRequest();
 
         ui::widgets::SameLine();
-        if (ui::widgets::Button("Submit Shelf") && shelfSelected)
-            SubmitSelectedShelf();
+        if (ui::widgets::Button("Submit PR") && shelfSelected)
+            OpenSubmitPullRequest();
+
+        ui::widgets::SameLine();
+        if (ui::widgets::Button("Delete Shelf") && shelfSelected)
+            DeleteSelectedShelf();
 
         if (!shelfSelected)
             ui::widgets::Text("Select or create a shelf branch to enable shelf actions.");
 
-        if (!m_shareLink.empty())
-            ui::widgets::Text("Share: " + m_shareLink);
+        if (!m_pullRequestLink.empty())
+            ui::widgets::Text("PR: " + m_pullRequestLink);
 
         ui::widgets::Separator();
 
@@ -339,24 +343,39 @@ void AppUi::ShelveSelectedFiles()
     }
 }
 
-void AppUi::ShareSelectedShelf()
+void AppUi::ShareSelectedShelfAsPullRequest()
 {
     if (!HasWritableShelfSelected())
         return;
 
-    m_shareLink = m_shelfService.ShareShelf(m_selectedBranch);
-    if (!m_shareLink.empty())
-        std::cout << "Shelf share link: " << m_shareLink << '\n';
+    m_pullRequestLink = m_shelfService.ShareShelfAsPullRequest(m_selectedBranch);
+    if (!m_pullRequestLink.empty())
+        std::cout << "Shelf pull request link: " << m_pullRequestLink << '\n';
 }
 
-void AppUi::SubmitSelectedShelf()
+void AppUi::OpenSubmitPullRequest()
 {
     if (!HasWritableShelfSelected())
         return;
 
-    if (m_shelfService.SubmitShelf(m_selectedBranch))
+    m_pullRequestLink = m_shelfService.SubmitShelfUrl(m_selectedBranch);
+    if (!m_pullRequestLink.empty())
+        std::cout << "Submit shelf through PR: " << m_pullRequestLink << '\n';
+}
+
+void AppUi::DeleteSelectedShelf()
+{
+    if (!HasWritableShelfSelected())
+        return;
+
+    const std::string deletedShelf = m_selectedBranch;
+    if (m_shelfService.DeleteShelf(deletedShelf, true))
     {
-        std::cout << "Submitted shelf to main: " << m_selectedBranch << '\n';
+        std::cout << "Deleted shelf: " << deletedShelf << '\n';
+        m_selectedBranch = "main";
+        m_pullRequestLink.clear();
+        m_workspaceState.SetActiveShelf({});
+        m_workspaceState.Save();
         RefreshRepositoryData();
     }
 }

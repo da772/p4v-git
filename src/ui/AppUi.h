@@ -34,8 +34,9 @@ private:
     void DrawShelfSelector();
     void CreateShelfFromInput();
     void ShelveSelectedFiles();
-    void ShareSelectedShelf();
-    void SubmitSelectedShelf();
+    void ShareSelectedShelfAsPullRequest();
+    void OpenSubmitPullRequest();
+    void DeleteSelectedShelf();
     bool HasWritableShelfSelected() const;
     std::string RelativePath(const std::filesystem::path& path) const;
     std::string FileLabel(const std::filesystem::path& path) const;
@@ -48,7 +49,7 @@ private:
     bool m_hasSourcePath = false;
     std::string m_sourcePathError;
     std::string m_selectedBranch = "main";
-    std::string m_shareLink;
+    std::string m_pullRequestLink;
     std::optional<GitRepository> m_repository;
     ShelfService m_shelfService;
     WorkspaceState m_workspaceState;
