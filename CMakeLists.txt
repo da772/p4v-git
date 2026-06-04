@@ -54,6 +54,7 @@ set(P4VGIT_SOURCES
     src/application/Application.cpp
     src/gui/GuiFactory.cpp
     src/gui/imgui/ImGuiLayer.cpp
+    src/log/StdoutLog.cpp
     src/main.cpp
     src/platform/WindowFactory.cpp
     src/platform/glfw/GlfwWindow.cpp
@@ -70,6 +71,7 @@ set(P4VGIT_HEADERS
     src/gui/GuiLayer.h
     src/gui/GuiRendererBackend.h
     src/gui/imgui/ImGuiLayer.h
+    src/log/StdoutLog.h
     src/platform/Window.h
     src/platform/WindowFactory.h
     src/platform/glfw/GlfwWindow.h

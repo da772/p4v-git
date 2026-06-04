@@ -7,6 +7,7 @@
 #include "renderer/RendererFactory.h"
 
 #include <cstdlib>
+#include <iostream>
 
 namespace p4vgit
 {
@@ -30,6 +31,9 @@ int Application::Run()
 
 bool Application::Initialize()
 {
+    m_stdoutLog.StartCapture();
+    m_appUi.SetStdoutLog(&m_stdoutLog);
+
     m_window = CreateWindow(WindowBackend::Glfw);
     if (m_window == nullptr || !m_window->Initialize({ "p4v-git", 1280, 800 }))
         return false;
@@ -40,6 +44,7 @@ bool Application::Initialize()
     m_guiLayer = CreateGuiLayer(GuiBackend::ImGui);
     m_guiLayer->Initialize(*m_window, *m_renderer);
 
+    std::cout << "p4v-git started\n";
     return true;
 }
 
@@ -87,5 +92,7 @@ void Application::Shutdown()
         m_window->Shutdown();
         m_window.reset();
     }
+
+    m_stdoutLog.StopCapture();
 }
 }
