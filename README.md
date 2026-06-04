@@ -1,10 +1,21 @@
 # p4v-git
 
-A cross-platform C++ desktop application aiming to provide a P4V-style interface backed by Git.
+<img src="icon.png" alt="p4v-git icon" width="96">
 
-Current version: `0.1.12`
+`p4v-git` is a cross-platform desktop Git client inspired by Perforce P4V. The goal is to provide a familiar workspace-oriented UI for browsing a repository, organizing active file changes into shelves, reviewing shelf diffs, opening/merging pull requests, and submitting changes back to a selected target branch.
 
-The first milestone boots a GLFW window, initializes Vulkan, enables ImGui docking, uses FIFO present mode for VSync, and shows the Dear ImGui demo window.
+Current version: `0.1.14`
+
+The application is built with C++20, CMake, GLFW, Vulkan, and Dear ImGui docking.
+
+## Features
+
+- P4V-style Workspace Explorer, File Changes, and Log panels while keeping Git as the source-control backend.
+- File checkout intent that lets users group local Git changes into Perforce-like shelves without staging files directly.
+- Shelf workflows backed by Git branches and GitHub pull requests, including shelve, submit, link, restore, revert, and delete actions.
+- Target-branch selection so teams can submit shelves into the branch they actually use, not only `main`.
+- Active change lists that support multi-select, drag/drop between shelves, and VS Code diffs.
+- Background Git/GitHub operations with visible UI busy states so the app feels like a desktop client instead of a command wrapper.
 
 ## Prerequisites
 
@@ -16,7 +27,7 @@ The first milestone boots a GLFW window, initializes Vulkan, enables ImGui docki
 - Vulkan SDK and loader
   - Windows/macOS: install the LunarG Vulkan SDK and ensure `VULKAN_SDK` is set
   - Linux: install Vulkan development packages for your distribution
-  
+
 ## Setup
 
 Clone dependencies:
@@ -31,13 +42,12 @@ Configure:
 cmake -S . -B build
 ```
 
-
-
 Build:
 
 ```sh
 cmake --build build --config Debug
 ```
+
 Run:
 
 ```sh
@@ -48,13 +58,4 @@ Run:
 ./build/p4v-git
 ```
 
-## Notes
-
-- GLFW and ImGui are vendored as git submodules under `external/`.
-- The Vulkan swapchain is created with `VK_PRESENT_MODE_FIFO_KHR`, which is guaranteed by Vulkan and provides VSync behavior.
-- ImGui is pinned to the docking branch so later P4V-style panes can be built with dockable layouts.
-- The application version is defined in the root `CMakeLists.txt` `project(... VERSION ...)` value. Bump it for each update; CMake generates `P4vGitVersion.h` from that value.
-- App icons come from `icon.ico` on Windows and `icon.png` on Linux. macOS builds generate `p4v-git.icns` from `icon.png`; GLFW also receives embedded runtime icon pixels on platforms that support window icons.
-- MSVC builds use `/MP` so C++ compilation can run across multiple processes.
-- Git status uses NUL-delimited porcelain output with full untracked file expansion so active-change paths remain repo-relative even when they contain spaces, quotes, or live in new folders.
-- Windows builds use a GUI subsystem executable and hidden child processes so Git/curl/browser commands do not open terminal windows.
+See `CHANGELOG.txt` for versioned changes.
