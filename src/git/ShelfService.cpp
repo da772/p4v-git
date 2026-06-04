@@ -674,7 +674,7 @@ bool ShelfService::OpenDefaultMergeTool() const
 
     const GitCommandResult result = RunExternalCommand(
         "Opening merge tool: VS Code",
-        "code --wait " + ShellQuote(m_repository->Root().string()) + " 2>&1",
+        "code --reuse-window " + ShellQuote(m_repository->Root().string()) + " 2>&1",
         true,
         true);
 
