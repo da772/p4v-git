@@ -14,6 +14,13 @@ struct ShelfSubmitResult
     bool branchDeleted = false;
 };
 
+struct MainSyncStatus
+{
+    bool fetched = false;
+    bool remoteAvailable = false;
+    int behindCount = 0;
+};
+
 class ShelfService
 {
 public:
@@ -31,12 +38,15 @@ public:
     bool RestoreFileFromShelfToWorkingTree(std::string_view shelfBranch, std::string_view file);
     bool UndoLocalFileChanges(std::string_view file);
     bool SubmitMain(const std::vector<std::string>& files, std::string_view summary, std::string_view description);
+    MainSyncStatus RefreshMain(bool logCommand = true) const;
+    bool PullMain();
     std::string EnsureShelfLink(std::string_view shelfBranch);
     std::string ShelveFilesAndEnsureShelfLink(std::string_view shelfBranch, const std::vector<std::string>& files);
-    ShelfSubmitResult SubmitShelf(std::string_view shelfBranch);
+    ShelfSubmitResult SubmitShelf(std::string_view shelfBranch, const std::vector<std::string>& files);
     bool DeleteShelf(std::string_view shelfBranch, bool deleteRemote);
 
 private:
+    bool RestoreFilesFromMain(const std::vector<std::string>& files);
     std::string BuildUserPrefix(bool logCommand) const;
     static std::string SanitizeBranchPart(std::string text);
     static std::string Quote(std::string_view text);

@@ -42,6 +42,8 @@ struct RepositorySnapshot
     std::string currentBranch;
     std::vector<ShelfLinkEntry> shelfLinks;
     std::vector<ShelfCommittedFileList> shelfFiles;
+    bool mainRemoteAvailable = false;
+    int mainBehindCount = 0;
     uint64_t refreshGeneration = 0;
 };
 
@@ -89,8 +91,9 @@ private:
     static RepositorySnapshot LoadRepositorySnapshot(const std::filesystem::path& selectedPath, bool discoverRepository, bool logCommands, uint64_t refreshGeneration);
     static ShelfJobResult RunCreateShelfJob(const std::filesystem::path& repoRoot, std::string shelfName);
     static ShelfJobResult RunShelveShelfJob(const std::filesystem::path& repoRoot, std::string shelf, std::vector<std::string> files);
-    static ShelfJobResult RunSubmitShelfJob(const std::filesystem::path& repoRoot, std::string shelf);
+    static ShelfJobResult RunSubmitShelfJob(const std::filesystem::path& repoRoot, std::string shelf, std::vector<std::string> files);
     static ShelfJobResult RunSubmitMainJob(const std::filesystem::path& repoRoot, std::vector<std::string> files, std::string summary, std::string description);
+    static ShelfJobResult RunPullMainJob(const std::filesystem::path& repoRoot);
     static ShelfJobResult RunDeleteShelfJob(const std::filesystem::path& repoRoot, std::string shelf);
     static ShelfJobResult RunRevertShelfFileJob(const std::filesystem::path& repoRoot, std::string shelf, std::string file);
     static ShelfJobResult RunRevertActiveFileJob(const std::filesystem::path& repoRoot, std::string shelf, std::string file);
@@ -142,6 +145,7 @@ private:
     void ShelveShelf(const std::string& shelf);
     void SubmitShelf(const std::string& shelf);
     void SubmitMainFromPopup();
+    void PullMain();
     void DeleteShelf(const std::string& shelf);
     void OpenShelfLink(std::string_view shelf);
     std::string RelativePath(const std::filesystem::path& path) const;
@@ -158,6 +162,8 @@ private:
     std::string m_sourcePathError;
     std::string m_selectedBranch;
     std::string m_currentGitBranch;
+    bool m_mainRemoteAvailable = false;
+    int m_mainBehindCount = 0;
     std::vector<ShelfLinkEntry> m_shelfLinks;
     std::vector<ShelfCommittedFileList> m_shelfFiles;
     std::optional<GitRepository> m_repository;
