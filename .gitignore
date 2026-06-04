@@ -42,3 +42,4 @@ compile_commands.json
 .vs/
 .vscode/
 .idea/
+*.aps

@@ -1,9 +1,9 @@
 #include "git/ShelfService.h"
 
+#include "platform/Process.h"
+
 #include <algorithm>
-#include <array>
 #include <cctype>
-#include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <filesystem>
@@ -11,15 +11,8 @@
 #include <optional>
 #include <sstream>
 #include <system_error>
+#include <chrono>
 #include <utility>
-
-#ifdef _WIN32
-#define P4VGIT_POPEN _popen
-#define P4VGIT_PCLOSE _pclose
-#else
-#define P4VGIT_POPEN popen
-#define P4VGIT_PCLOSE pclose
-#endif
 
 namespace p4vgit
 {
@@ -86,26 +79,29 @@ static std::string ShellQuote(std::string_view text)
     return quoted;
 }
 
+static std::string SafeFileName(std::string_view text)
+{
+    std::string safe;
+    for (const char ch : text)
+    {
+        if (std::isalnum(static_cast<unsigned char>(ch)) || ch == '.' || ch == '-' || ch == '_')
+            safe += ch;
+        else
+            safe += '_';
+    }
+
+    return safe.empty() ? "file" : safe;
+}
+
 static GitCommandResult RunExternalCommand(std::string_view label, const std::string& command, bool logOutput = true, bool logCommand = true)
 {
     if (logCommand)
         std::cout << label << '\n';
 
+    const ProcessResult processResult = RunHiddenCommand(command);
     GitCommandResult result;
-    std::array<char, 512> buffer = {};
-    FILE* pipe = P4VGIT_POPEN(command.c_str(), "r");
-    if (pipe == nullptr)
-    {
-        result.output = "Failed to start external process";
-        if (logCommand)
-            std::cout << result.output << '\n';
-        return result;
-    }
-
-    while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr)
-        result.output += buffer.data();
-
-    result.exitCode = P4VGIT_PCLOSE(pipe);
+    result.exitCode = processResult.exitCode;
+    result.output = processResult.output;
     if (logOutput && !result.output.empty())
         std::cout << result.output << '\n';
     if (logCommand && !result.Succeeded())
@@ -591,6 +587,64 @@ bool ShelfService::UndoLocalFileChanges(std::string_view file)
         return true;
 
     return m_repository->Run("clean -f -- " + Quote(fileText)).Succeeded();
+}
+
+bool ShelfService::OpenFileDiff(std::string_view file) const
+{
+    if (m_repository == nullptr || file.empty())
+        return false;
+
+    const std::string fileText = std::string(file);
+    const auto timestamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    const std::filesystem::path diffDirectory = m_repository->GitDir(false) / "p4v-git" / "diffs";
+    std::error_code error;
+    std::filesystem::create_directories(diffDirectory, error);
+    if (error)
+    {
+        std::cout << "Cannot open diff: failed to create temp diff directory.\n";
+        return false;
+    }
+
+    const std::string safeName = SafeFileName(TargetBranch()) + "_" + std::to_string(timestamp) + "_" + SafeFileName(fileText);
+    const std::filesystem::path basePath = diffDirectory / ("base_" + safeName);
+    const std::filesystem::path workingFallbackPath = diffDirectory / ("working_" + safeName);
+    const std::filesystem::path workingPath = m_repository->Root() / fileText;
+
+    const GitCommandResult baseResult = m_repository->Run("show " + Quote(TargetBranch() + ":" + fileText), false);
+    {
+        std::ofstream baseFile(basePath, std::ios::binary | std::ios::trunc);
+        if (!baseFile.is_open())
+        {
+            std::cout << "Cannot open diff: failed to write base temp file.\n";
+            return false;
+        }
+
+        if (baseResult.Succeeded())
+            baseFile << baseResult.output;
+    }
+
+    std::filesystem::path rightPath = workingPath;
+    if (!std::filesystem::exists(workingPath, error))
+    {
+        std::ofstream workingFile(workingFallbackPath, std::ios::binary | std::ios::trunc);
+        if (!workingFile.is_open())
+        {
+            std::cout << "Cannot open diff: failed to write working temp file.\n";
+            return false;
+        }
+        rightPath = workingFallbackPath;
+    }
+
+    const GitCommandResult result = RunExternalCommand(
+        "Opening diff: VS Code",
+        "code --reuse-window --diff " + ShellQuote(basePath.string()) + " " + ShellQuote(rightPath.string()) + " 2>&1",
+        true,
+        true);
+
+    if (!result.Succeeded())
+        std::cout << "Cannot open VS Code diff. Make sure the `code` command is available on PATH.\n";
+
+    return result.Succeeded();
 }
 
 bool ShelfService::SubmitMain(const std::vector<std::string>& files, std::string_view summary, std::string_view description)

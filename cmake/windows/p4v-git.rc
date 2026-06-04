@@ -1,0 +1,4 @@
+#include <windows.h>
+#include "../../src/platform/windows/P4vGitWindowsResource.h"
+
+IDI_P4VGIT ICON "../../icon.ico"
