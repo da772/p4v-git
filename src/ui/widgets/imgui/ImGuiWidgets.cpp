@@ -152,6 +152,24 @@ bool InputText(std::string_view label, char* buffer, size_t bufferSize)
     return ImGui::InputText(labelText.c_str(), buffer, bufferSize);
 }
 
+bool BeginCombo(std::string_view label, std::string_view preview)
+{
+    const std::string labelText = ToString(label);
+    const std::string previewText = ToString(preview);
+    return ImGui::BeginCombo(labelText.c_str(), previewText.c_str());
+}
+
+bool Selectable(std::string_view label, bool selected)
+{
+    const std::string labelText = ToString(label);
+    return ImGui::Selectable(labelText.c_str(), selected);
+}
+
+void EndCombo()
+{
+    ImGui::EndCombo();
+}
+
 void SameLine()
 {
     ImGui::SameLine();
@@ -177,6 +195,22 @@ void TreeLeaf(std::string_view label)
 {
     const std::string labelText = ToString(label);
     ImGui::TreeNodeEx(labelText.c_str(), ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_SpanAvailWidth);
+}
+
+bool BeginContextMenuForLastItem()
+{
+    return ImGui::BeginPopupContextItem();
+}
+
+bool MenuItem(std::string_view label, bool enabled)
+{
+    const std::string labelText = ToString(label);
+    return ImGui::MenuItem(labelText.c_str(), nullptr, false, enabled);
+}
+
+void EndContextMenu()
+{
+    ImGui::EndPopup();
 }
 
 void BeginScrollRegion(std::string_view id)

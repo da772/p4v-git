@@ -52,6 +52,9 @@ target_link_libraries(imgui PUBLIC
 
 set(P4VGIT_SOURCES
     src/application/Application.cpp
+    src/git/GitRepository.cpp
+    src/git/ShelfService.cpp
+    src/git/WorkspaceState.cpp
     src/gui/GuiFactory.cpp
     src/gui/imgui/ImGuiLayer.cpp
     src/log/StdoutLog.cpp
@@ -66,6 +69,9 @@ set(P4VGIT_SOURCES
 
 set(P4VGIT_HEADERS
     src/application/Application.h
+    src/git/GitRepository.h
+    src/git/ShelfService.h
+    src/git/WorkspaceState.h
     src/gui/GuiDrawData.h
     src/gui/GuiFactory.h
     src/gui/GuiLayer.h
