@@ -122,24 +122,15 @@ std::string ShelfService::ShelveFilesAndOpenPullRequest(std::string_view shelfBr
     return PullRequestUrl(shelfBranch);
 }
 
-bool ShelfService::SubmitShelf(std::string_view shelfBranch)
+std::string ShelfService::SubmitShelfAsPullRequest(std::string_view shelfBranch)
 {
     if (m_repository == nullptr || shelfBranch.empty())
-        return false;
+        return {};
 
-    const std::string currentBranch = m_repository->CurrentBranch();
-    bool succeeded = m_repository->Run("switch main").Succeeded();
-    if (succeeded)
-        succeeded = m_repository->Run("pull --ff-only origin main").Succeeded();
-    if (succeeded)
-        succeeded = m_repository->Run("merge --no-ff " + Quote(shelfBranch) + " -m " + Quote("Submit " + std::string(shelfBranch))).Succeeded();
-    if (succeeded)
-        succeeded = m_repository->Run("push origin main").Succeeded();
+    if (!m_repository->Run("push -u origin " + Quote(shelfBranch)).Succeeded())
+        return {};
 
-    if (!currentBranch.empty() && currentBranch != "main")
-        m_repository->Run("switch " + Quote(currentBranch));
-
-    return succeeded;
+    return PullRequestUrl(shelfBranch);
 }
 
 bool ShelfService::DeleteShelf(std::string_view shelfBranch, bool deleteRemote)
