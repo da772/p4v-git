@@ -234,6 +234,12 @@ void AppUi::DrawFileEntry(const std::filesystem::directory_entry& entry)
 
     if (ui::widgets::BeginContextMenuForLastItem())
     {
+        if (ui::widgets::MenuItem("Check out to Main", true))
+        {
+            SelectShelf("main");
+            CheckOutFile(entry.path());
+        }
+
         for (const std::string& shelf : m_shelves)
         {
             if (ui::widgets::MenuItem("Check out to " + shelf, true))
@@ -242,15 +248,13 @@ void AppUi::DrawFileEntry(const std::filesystem::directory_entry& entry)
                 CheckOutFile(entry.path());
             }
         }
-        if (m_shelves.empty())
-            ui::widgets::Text("Create a shelf before checking out files.");
         ui::widgets::EndContextMenu();
     }
 }
 
 void AppUi::CheckOutFile(const std::filesystem::path& path)
 {
-    if (!HasWritableShelfSelected())
+    if (m_selectedBranch.empty())
         return;
 
     const std::string relativePath = RelativePath(path);
@@ -298,6 +302,9 @@ void AppUi::RefreshRepositoryDataIfNeeded()
 
 void AppUi::DrawShelfList()
 {
+    DrawShelfPanel("main", true);
+
+    ui::widgets::Separator();
     ui::widgets::Text("Shelves");
     if (m_shelves.empty())
     {
@@ -306,38 +313,19 @@ void AppUi::DrawShelfList()
     }
 
     for (const std::string& shelf : m_shelves)
-        DrawShelfPanel(shelf);
+        DrawShelfPanel(shelf, false);
 }
 
-void AppUi::DrawShelfPanel(const std::string& shelf)
+void AppUi::DrawShelfPanel(const std::string& shelf, bool isMainShelf)
 {
-    const bool open = ui::widgets::BeginTreeNode(shelf);
+    const std::string title = isMainShelf ? "Main" : shelf;
+    const bool open = ui::widgets::BeginTreeNode(title);
     if (const std::optional<std::string> payload = ui::widgets::AcceptDragDropPayload("p4v-git-file"))
         MoveCheckedOutFile(*payload, shelf);
 
     if (!open)
         return;
 
-    if (ui::widgets::Button("Shelve"))
-        ShelveShelf(shelf);
-
-    ui::widgets::SameLine();
-    if (ui::widgets::Button("Submit"))
-        SubmitShelf(shelf);
-
-    ui::widgets::SameLine();
-    if (ui::widgets::Button("Delete Shelf"))
-        DeleteShelf(shelf);
-
-    const std::string link = PullRequestLink(shelf);
-    if (!link.empty())
-    {
-        ui::widgets::Text("PR");
-        if (ui::widgets::Link(link))
-            OpenPullRequestLink(shelf);
-    }
-
-    ui::widgets::Separator();
     ui::widgets::Text("Active changes");
 
     const std::vector<std::string>& files = m_workspaceState.CheckedOutFiles(shelf);
@@ -352,24 +340,52 @@ void AppUi::DrawShelfPanel(const std::string& shelf)
             DrawShelfFile(shelf, file);
     }
 
+    if (!isMainShelf)
+    {
+        ui::widgets::Separator();
+        if (ui::widgets::Button("Shelve"))
+            ShelveShelf(shelf);
+
+        ui::widgets::SameLine();
+        if (ui::widgets::Button("Submit"))
+            SubmitShelf(shelf);
+
+        ui::widgets::SameLine();
+        if (ui::widgets::Button("Delete Shelf"))
+            DeleteShelf(shelf);
+
+        const std::string link = PullRequestLink(shelf);
+        if (!link.empty())
+        {
+            ui::widgets::Text("PR");
+            if (ui::widgets::Link(link))
+                OpenPullRequestLink(shelf);
+        }
+    }
+
     ui::widgets::EndTreeNode();
 }
 
 void AppUi::DrawShelfFile(const std::string& shelf, const std::string& file)
 {
-    ui::widgets::Text(file);
+    ui::widgets::Selectable(file + "##" + shelf + "/" + file, false);
     ui::widgets::DragDropSource("p4v-git-file", shelf + "\n" + file, file);
 
-    ui::widgets::SameLine();
-    if (ui::widgets::Button("Remove##" + shelf + "/" + file))
-        RemoveCheckedOutFile(shelf, file);
+    if (ui::widgets::BeginContextMenuForLastItem())
+    {
+        if (ui::widgets::MenuItem("Remove", true))
+            RemoveCheckedOutFile(shelf, file);
+        ui::widgets::EndContextMenu();
+    }
 }
 
 void AppUi::SelectShelf(std::string_view shelf)
 {
     if (shelf.empty() || shelf == "main")
     {
-        ClearSelectedShelf();
+        m_selectedBranch = "main";
+        m_workspaceState.SetActiveShelf(m_selectedBranch);
+        m_workspaceState.Save();
         return;
     }
 
@@ -390,8 +406,7 @@ void AppUi::SelectShelf(std::string_view shelf)
 void AppUi::ClearSelectedShelf()
 {
     m_selectedBranch = "main";
-    m_pullRequestLinks.clear();
-    m_workspaceState.SetActiveShelf({});
+    m_workspaceState.SetActiveShelf(m_selectedBranch);
     m_workspaceState.Save();
 }
 
@@ -455,7 +470,8 @@ void AppUi::MoveCheckedOutFile(std::string_view payload, std::string_view toShel
 
 void AppUi::RemoveCheckedOutFile(const std::string& shelf, const std::string& file)
 {
-    m_shelfService.RemoveFileFromShelf(shelf, file);
+    if (shelf != "main")
+        m_shelfService.RemoveFileFromShelf(shelf, file);
     m_workspaceState.RemoveCheckedOutFile(shelf, file);
     m_workspaceState.Save();
     std::cout << "Removed " << file << " from " << shelf << '\n';
@@ -544,11 +560,6 @@ void AppUi::DeleteShelf(const std::string& shelf)
         m_workspaceState.Save();
         RefreshRepositoryData();
     }
-}
-
-bool AppUi::HasWritableShelfSelected() const
-{
-    return m_hasSourcePath && m_selectedBranch != "main" && !m_selectedBranch.empty();
 }
 
 std::string AppUi::RelativePath(const std::filesystem::path& path) const
