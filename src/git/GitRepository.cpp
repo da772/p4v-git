@@ -89,14 +89,14 @@ std::string GitRepository::UserName(bool logCommand) const
     return userName;
 }
 
-std::string GitRepository::RemoteUrl(std::string_view remote) const
+std::string GitRepository::RemoteUrl(std::string_view remote, bool logCommand) const
 {
-    return Trim(Run("remote get-url " + std::string(remote)).output);
+    return Trim(Run("remote get-url " + std::string(remote), logCommand).output);
 }
 
-std::filesystem::path GitRepository::GitDir() const
+std::filesystem::path GitRepository::GitDir(bool logCommand) const
 {
-    std::filesystem::path gitDir = Trim(Run("rev-parse --git-dir").output);
+    std::filesystem::path gitDir = Trim(Run("rev-parse --git-dir", logCommand).output);
     if (gitDir.is_relative())
         gitDir = m_root / gitDir;
 
@@ -137,10 +137,10 @@ std::vector<GitStatusEntry> GitRepository::Status(bool logCommand) const
     return entries;
 }
 
-bool GitRepository::BranchExists(std::string_view branch) const
+bool GitRepository::BranchExists(std::string_view branch, bool logCommand) const
 {
     const std::string ref = "refs/heads/" + std::string(branch);
-    return Run("show-ref --verify --quiet " + Quote(std::string_view(ref))).Succeeded();
+    return Run("show-ref --verify --quiet " + Quote(std::string_view(ref)), logCommand).Succeeded();
 }
 
 std::string GitRepository::Trim(std::string text)

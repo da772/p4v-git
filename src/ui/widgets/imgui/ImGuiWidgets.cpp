@@ -4,6 +4,7 @@
 #include "imgui_internal.h"
 
 #include <algorithm>
+#include <optional>
 #include <string>
 
 namespace p4vgit::ui::widgets
@@ -230,6 +231,35 @@ bool MenuItem(std::string_view label, bool enabled)
 void EndContextMenu()
 {
     ImGui::EndPopup();
+}
+
+bool DragDropSource(std::string_view type, std::string_view payload, std::string_view label)
+{
+    if (!ImGui::BeginDragDropSource())
+        return false;
+
+    const std::string typeText = ToString(type);
+    const std::string payloadText = ToString(payload);
+    ImGui::SetDragDropPayload(typeText.c_str(), payloadText.c_str(), payloadText.size() + 1);
+    ImGui::TextUnformatted(label.data(), label.data() + label.size());
+    ImGui::EndDragDropSource();
+    return true;
+}
+
+std::optional<std::string> AcceptDragDropPayload(std::string_view type)
+{
+    if (!ImGui::BeginDragDropTarget())
+        return std::nullopt;
+
+    std::optional<std::string> payloadText;
+    const std::string typeText = ToString(type);
+    if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(typeText.c_str()))
+    {
+        payloadText = std::string(static_cast<const char*>(payload->Data), static_cast<size_t>(payload->DataSize > 0 ? payload->DataSize - 1 : 0));
+    }
+
+    ImGui::EndDragDropTarget();
+    return payloadText;
 }
 
 void BeginScrollRegion(std::string_view id)

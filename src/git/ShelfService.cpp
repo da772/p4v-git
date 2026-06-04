@@ -85,9 +85,10 @@ static std::string ShellQuote(std::string_view text)
     return quoted;
 }
 
-static GitCommandResult RunExternalCommand(std::string_view label, const std::string& command, bool logOutput = true)
+static GitCommandResult RunExternalCommand(std::string_view label, const std::string& command, bool logOutput = true, bool logCommand = true)
 {
-    std::cout << label << '\n';
+    if (logCommand)
+        std::cout << label << '\n';
 
     GitCommandResult result;
     std::array<char, 512> buffer = {};
@@ -95,7 +96,8 @@ static GitCommandResult RunExternalCommand(std::string_view label, const std::st
     if (pipe == nullptr)
     {
         result.output = "Failed to start external process";
-        std::cout << result.output << '\n';
+        if (logCommand)
+            std::cout << result.output << '\n';
         return result;
     }
 
@@ -105,7 +107,7 @@ static GitCommandResult RunExternalCommand(std::string_view label, const std::st
     result.exitCode = P4VGIT_PCLOSE(pipe);
     if (logOutput && !result.output.empty())
         std::cout << result.output << '\n';
-    if (!result.Succeeded())
+    if (logCommand && !result.Succeeded())
         std::cout << "external command failed with exit code " << result.exitCode << '\n';
 
     return result;
@@ -297,9 +299,9 @@ static std::string CredentialPassword(std::string_view credentialOutput)
     return {};
 }
 
-static std::string GitHubTokenFromCredentialHelper(const GitRepository& repository)
+static std::string GitHubTokenFromCredentialHelper(const GitRepository& repository, bool logCommand)
 {
-    const std::filesystem::path requestDirectory = repository.GitDir() / "p4v-git";
+    const std::filesystem::path requestDirectory = repository.GitDir(logCommand) / "p4v-git";
     std::error_code error;
     std::filesystem::create_directories(requestDirectory, error);
 
@@ -317,20 +319,21 @@ static std::string GitHubTokenFromCredentialHelper(const GitRepository& reposito
     const GitCommandResult result = RunExternalCommand(
         "Git credential helper: checking for GitHub API credentials",
         "git -C " + ShellQuote(repository.Root().string()) + " credential fill < " + ShellQuote(requestPath.string()) + " 2>&1",
-        false);
+        false,
+        logCommand);
     if (!result.Succeeded())
         return {};
 
     return CredentialPassword(result.output);
 }
 
-static std::string GitHubAuthToken(const GitRepository& repository)
+static std::string GitHubAuthToken(const GitRepository& repository, bool logCommand = true)
 {
     std::string token = GitHubToken();
     if (!token.empty())
         return token;
 
-    return GitHubTokenFromCredentialHelper(repository);
+    return GitHubTokenFromCredentialHelper(repository, logCommand);
 }
 
 static std::string GitHubApiHeaders(const std::string& token)
@@ -341,6 +344,35 @@ static std::string GitHubApiHeaders(const std::string& token)
         headers += "-H " + ShellQuote("Authorization: Bearer " + token) + " ";
 
     return headers;
+}
+
+static std::string FindGitHubPullRequestUrl(const GitRepository& repository, std::string_view shelfBranch, bool logCommand, std::string_view state)
+{
+    if (shelfBranch.empty())
+        return {};
+
+    const std::optional<GitHubRepositoryInfo> repositoryInfo = ParseGitHubRemote(repository.RemoteUrl("origin", logCommand));
+    if (!repositoryInfo.has_value())
+    {
+        if (logCommand)
+            std::cout << "Cannot find pull request: origin is not a GitHub remote.\n";
+        return {};
+    }
+
+    const std::string token = GitHubAuthToken(repository, logCommand);
+    const std::string branch = std::string(shelfBranch);
+    const std::string pullsUrl = "https://api.github.com/repos/" + repositoryInfo->ApiRepositoryPath() +
+        "/pulls?state=" + std::string(state) +
+        "&head=" + UrlEncode(repositoryInfo->owner + ":" + branch) +
+        "&base=main&sort=updated&direction=desc";
+
+    const GitCommandResult result = RunExternalCommand(
+        "GitHub API: checking for an existing pull request",
+        "curl -sS " + GitHubApiHeaders(token) + ShellQuote(pullsUrl) + " 2>&1",
+        logCommand,
+        logCommand);
+
+    return JsonStringValue(result.output, "html_url");
 }
 
 void ShelfService::SetRepository(GitRepository* repository)
@@ -380,6 +412,26 @@ std::vector<std::string> ShelfService::Shelves(bool logCommand) const
     }
 
     return shelves;
+}
+
+bool ShelfService::IsShelfValid(std::string_view shelfBranch, bool logCommand) const
+{
+    if (m_repository == nullptr || shelfBranch.empty() || shelfBranch == "main")
+        return false;
+
+    const std::string prefix = BuildUserPrefix(logCommand);
+    if (shelfBranch.rfind(prefix, 0) != 0)
+        return false;
+
+    return m_repository->BranchExists(shelfBranch, logCommand);
+}
+
+std::string ShelfService::FindPullRequest(std::string_view shelfBranch, bool logCommand) const
+{
+    if (m_repository == nullptr || !IsShelfValid(shelfBranch, logCommand))
+        return {};
+
+    return FindGitHubPullRequestUrl(*m_repository, shelfBranch, logCommand, "all");
 }
 
 bool ShelfService::CreateShelf(std::string_view shelfName)
@@ -439,6 +491,36 @@ bool ShelfService::ShelveFiles(std::string_view shelfBranch, const std::vector<s
     m_repository->Run("worktree remove --force " + Quote(worktreeRoot.string()));
 
     return addSucceeded && committed;
+}
+
+bool ShelfService::RemoveFileFromShelf(std::string_view shelfBranch, std::string_view file)
+{
+    if (m_repository == nullptr || shelfBranch.empty() || file.empty() || !m_repository->BranchExists(shelfBranch))
+        return false;
+
+    const std::filesystem::path worktreeRoot = m_repository->GitDir() / "p4v-git" / "worktrees" / (SanitizeBranchPart(std::string(shelfBranch)) + "-remove");
+    std::error_code error;
+    std::filesystem::remove_all(worktreeRoot, error);
+    std::filesystem::create_directories(worktreeRoot.parent_path(), error);
+
+    if (!m_repository->Run("worktree add --force " + Quote(worktreeRoot.string()) + " " + Quote(shelfBranch)).Succeeded())
+        return false;
+
+    GitRepository shelfWorktree(worktreeRoot);
+    const std::string fileText = std::string(file);
+    const bool restoredFromMain = shelfWorktree.Run("checkout main -- " + Quote(fileText)).Succeeded();
+    if (!restoredFromMain)
+        shelfWorktree.Run("rm --ignore-unmatch -- " + Quote(fileText));
+
+    const bool addSucceeded = shelfWorktree.Run("add -- " + Quote(fileText)).Succeeded();
+    const GitCommandResult commitResult = shelfWorktree.Run("commit -m " + Quote("Remove file from shelf"));
+    m_repository->Run("worktree remove --force " + Quote(worktreeRoot.string()));
+
+    if (commitResult.Succeeded())
+        return addSucceeded;
+
+    return commitResult.output.find("nothing to commit") != std::string::npos ||
+           commitResult.output.find("no changes added to commit") != std::string::npos;
 }
 
 std::string ShelfService::EnsurePullRequest(std::string_view shelfBranch)
@@ -524,34 +606,36 @@ std::string ShelfService::ShelveFilesAndOpenPullRequest(std::string_view shelfBr
     return EnsurePullRequest(shelfBranch);
 }
 
-std::string ShelfService::SubmitShelfAsPullRequest(std::string_view shelfBranch)
+ShelfSubmitResult ShelfService::SubmitShelfAsPullRequest(std::string_view shelfBranch)
 {
+    ShelfSubmitResult submitResult;
     if (m_repository == nullptr || shelfBranch.empty())
-        return {};
+        return submitResult;
 
     const std::string pullRequestUrl = EnsurePullRequest(shelfBranch);
     if (pullRequestUrl.empty())
-        return {};
+        return submitResult;
+    submitResult.pullRequestUrl = pullRequestUrl;
 
     const std::optional<GitHubRepositoryInfo> repositoryInfo = ParseGitHubRemote(m_repository->RemoteUrl("origin"));
     if (!repositoryInfo.has_value())
     {
         std::cout << "Cannot merge pull request: origin is not a GitHub remote.\n";
-        return pullRequestUrl;
+        return submitResult;
     }
 
     const std::string token = GitHubAuthToken(*m_repository);
     if (token.empty())
     {
         std::cout << "Cannot merge pull request: sign in with Git Credential Manager or set GH_TOKEN/GITHUB_TOKEN with GitHub repo access.\n";
-        return pullRequestUrl;
+        return submitResult;
     }
 
     const std::optional<int> pullRequestNumber = PullRequestNumberFromUrl(pullRequestUrl);
     if (!pullRequestNumber.has_value())
     {
         std::cout << "Cannot merge pull request: failed to determine pull request number from " << pullRequestUrl << '\n';
-        return pullRequestUrl;
+        return submitResult;
     }
 
     const std::filesystem::path requestDirectory = m_repository->GitDir() / "p4v-git";
@@ -565,7 +649,7 @@ std::string ShelfService::SubmitShelfAsPullRequest(std::string_view shelfBranch)
         if (!requestFile.is_open())
         {
             std::cout << "Cannot merge pull request: failed to write GitHub API request file.\n";
-            return pullRequestUrl;
+            return submitResult;
         }
 
         requestFile << "{"
@@ -586,7 +670,9 @@ std::string ShelfService::SubmitShelfAsPullRequest(std::string_view shelfBranch)
     if (merged.value_or(false))
     {
         std::cout << "Merged pull request into main: " << pullRequestUrl << '\n';
-        return pullRequestUrl;
+        submitResult.merged = true;
+        submitResult.branchDeleted = DeleteShelf(shelfBranch, true);
+        return submitResult;
     }
 
     const std::string message = JsonStringValue(mergeResult.output, "message");
@@ -595,7 +681,7 @@ std::string ShelfService::SubmitShelfAsPullRequest(std::string_view shelfBranch)
     else
         std::cout << "Cannot merge pull request: GitHub did not report a successful merge.\n";
 
-    return pullRequestUrl;
+    return submitResult;
 }
 
 bool ShelfService::DeleteShelf(std::string_view shelfBranch, bool deleteRemote)
