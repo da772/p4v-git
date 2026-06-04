@@ -43,8 +43,14 @@ std::optional<GitRepository> GitRepository::Discover(const std::filesystem::path
 
 GitCommandResult GitRepository::Run(std::string_view arguments) const
 {
+    return Run(arguments, true);
+}
+
+GitCommandResult GitRepository::Run(std::string_view arguments, bool logCommand) const
+{
     const std::string command = "git -C " + Quote(m_root) + " " + std::string(arguments) + " 2>&1";
-    std::cout << "$ " << command << '\n';
+    if (logCommand)
+        std::cout << "$ " << command << '\n';
 
     GitCommandResult result;
     std::array<char, 512> buffer = {};
@@ -52,7 +58,8 @@ GitCommandResult GitRepository::Run(std::string_view arguments) const
     if (pipe == nullptr)
     {
         result.output = "Failed to start git process";
-        std::cout << result.output << '\n';
+        if (logCommand)
+            std::cout << result.output << '\n';
         return result;
     }
 
@@ -60,9 +67,9 @@ GitCommandResult GitRepository::Run(std::string_view arguments) const
         result.output += buffer.data();
 
     result.exitCode = P4VGIT_PCLOSE(pipe);
-    if (!result.output.empty())
+    if (logCommand && !result.output.empty())
         std::cout << result.output;
-    if (!result.Succeeded())
+    if (logCommand && !result.Succeeded())
         std::cout << "git command failed with exit code " << result.exitCode << '\n';
 
     return result;
@@ -73,9 +80,9 @@ std::string GitRepository::CurrentBranch() const
     return Trim(Run("branch --show-current").output);
 }
 
-std::string GitRepository::UserName() const
+std::string GitRepository::UserName(bool logCommand) const
 {
-    std::string userName = Trim(Run("config user.name").output);
+    std::string userName = Trim(Run("config user.name", logCommand).output);
     if (userName.empty())
         userName = "user";
 
@@ -96,10 +103,10 @@ std::filesystem::path GitRepository::GitDir() const
     return gitDir;
 }
 
-std::vector<std::string> GitRepository::LocalBranches() const
+std::vector<std::string> GitRepository::LocalBranches(bool logCommand) const
 {
     std::vector<std::string> branches;
-    std::istringstream stream(Run("for-each-ref --format=%(refname:short) refs/heads").output);
+    std::istringstream stream(Run("for-each-ref --format=%(refname:short) refs/heads", logCommand).output);
     std::string line;
     while (std::getline(stream, line))
     {
@@ -111,10 +118,10 @@ std::vector<std::string> GitRepository::LocalBranches() const
     return branches;
 }
 
-std::vector<GitStatusEntry> GitRepository::Status() const
+std::vector<GitStatusEntry> GitRepository::Status(bool logCommand) const
 {
     std::vector<GitStatusEntry> entries;
-    std::istringstream stream(Run("status --porcelain=v1").output);
+    std::istringstream stream(Run("status --porcelain=v1", logCommand).output);
     std::string line;
     while (std::getline(stream, line))
     {

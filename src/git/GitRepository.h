@@ -33,12 +33,13 @@ public:
     static std::optional<GitRepository> Discover(const std::filesystem::path& selectedPath);
 
     GitCommandResult Run(std::string_view arguments) const;
+    GitCommandResult Run(std::string_view arguments, bool logCommand) const;
     std::string CurrentBranch() const;
-    std::string UserName() const;
+    std::string UserName(bool logCommand = true) const;
     std::string RemoteUrl(std::string_view remote) const;
     std::filesystem::path GitDir() const;
-    std::vector<std::string> LocalBranches() const;
-    std::vector<GitStatusEntry> Status() const;
+    std::vector<std::string> LocalBranches(bool logCommand = true) const;
+    std::vector<GitStatusEntry> Status(bool logCommand = true) const;
     bool BranchExists(std::string_view branch) const;
 
 private:

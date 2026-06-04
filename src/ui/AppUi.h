@@ -31,14 +31,14 @@ private:
     void DrawDirectory(const std::filesystem::path& path, int depth);
     void DrawFileEntry(const std::filesystem::directory_entry& entry);
     void CheckOutFile(const std::filesystem::path& path);
-    void RefreshRepositoryData();
+    void RefreshRepositoryData(bool logCommands = true);
     void RefreshRepositoryDataIfNeeded();
     void DrawShelfSelector();
     void CreateShelfFromInput();
     void ShelveSelectedFiles();
-    void OpenSelectedPullRequest();
     void SubmitSelectedShelf();
     void DeleteSelectedShelf();
+    void OpenPullRequestLink();
     bool HasWritableShelfSelected() const;
     std::string RelativePath(const std::filesystem::path& path) const;
     std::string FileLabel(const std::filesystem::path& path) const;

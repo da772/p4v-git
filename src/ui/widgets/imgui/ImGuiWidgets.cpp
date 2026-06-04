@@ -140,6 +140,25 @@ void Text(std::string_view text)
     ImGui::TextUnformatted(text.data(), text.data() + text.size());
 }
 
+bool Link(std::string_view label)
+{
+    const std::string labelText = ToString(label);
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextLink));
+    ImGui::TextUnformatted(labelText.c_str());
+    ImGui::PopStyleColor();
+
+    const bool hovered = ImGui::IsItemHovered();
+    if (hovered)
+    {
+        const ImVec2 min = ImGui::GetItemRectMin();
+        const ImVec2 max = ImGui::GetItemRectMax();
+        ImGui::GetWindowDrawList()->AddLine(ImVec2(min.x, max.y), max, ImGui::GetColorU32(ImGuiCol_TextLink));
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    }
+
+    return hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left);
+}
+
 bool Button(std::string_view label)
 {
     const std::string labelText = ToString(label);
