@@ -36,7 +36,7 @@ Build:
 ```sh
 cmake --build build --config Debug
 ```
-asda
+
 Run:
 
 ```sh
