@@ -36,11 +36,11 @@ public:
     GitCommandResult Run(std::string_view arguments, bool logCommand) const;
     std::string CurrentBranch() const;
     std::string UserName(bool logCommand = true) const;
-    std::string RemoteUrl(std::string_view remote) const;
-    std::filesystem::path GitDir() const;
+    std::string RemoteUrl(std::string_view remote, bool logCommand = true) const;
+    std::filesystem::path GitDir(bool logCommand = true) const;
     std::vector<std::string> LocalBranches(bool logCommand = true) const;
     std::vector<GitStatusEntry> Status(bool logCommand = true) const;
-    bool BranchExists(std::string_view branch) const;
+    bool BranchExists(std::string_view branch, bool logCommand = true) const;
 
 private:
     static std::string Trim(std::string text);
