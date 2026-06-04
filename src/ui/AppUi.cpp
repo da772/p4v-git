@@ -378,9 +378,12 @@ void AppUi::SubmitSelectedShelf()
     if (!HasWritableShelfSelected())
         return;
 
-    if (m_shelfService.SubmitShelf(m_selectedBranch))
+    m_pullRequestLink = m_shelfService.SubmitShelfAsPullRequest(m_selectedBranch);
+    if (!m_pullRequestLink.empty())
     {
-        std::cout << "Submitted shelf to main: " << m_selectedBranch << '\n';
+        std::cout << "Submit shelf through PR: " << m_pullRequestLink << '\n';
+        if (!OpenUrl(m_pullRequestLink))
+            std::cout << "Failed to open PR link in browser\n";
         RefreshRepositoryData();
     }
 }
