@@ -39,6 +39,29 @@ RepositorySnapshot AppUi::LoadRepositorySnapshot(const std::filesystem::path& se
     snapshot.discovered = true;
     snapshot.root = repository.Root();
     snapshot.workspaceState.Load(snapshot.root);
+    snapshot.targetBranch = snapshot.workspaceState.TargetBranch().empty() ? "main" : snapshot.workspaceState.TargetBranch();
+    for (const std::string& branch : repository.LocalBranches(logCommands))
+    {
+        if (branch.rfind("shelves/", 0) != 0)
+            snapshot.branches.push_back(branch);
+    }
+
+    if (!snapshot.branches.empty() && std::find(snapshot.branches.begin(), snapshot.branches.end(), snapshot.targetBranch) == snapshot.branches.end())
+    {
+        const std::string currentBranch = repository.CurrentBranch(logCommands);
+        if (!currentBranch.empty() && currentBranch.rfind("shelves/", 0) != 0)
+            snapshot.targetBranch = currentBranch;
+        else if (std::find(snapshot.branches.begin(), snapshot.branches.end(), "main") != snapshot.branches.end())
+            snapshot.targetBranch = "main";
+        else
+            snapshot.targetBranch = snapshot.branches.front();
+
+        snapshot.workspaceState.SetTargetBranch(snapshot.targetBranch);
+        snapshot.workspaceState.SetActiveShelf(snapshot.targetBranch);
+        snapshot.workspaceState.Save();
+    }
+
+    shelfService.SetTargetBranch(snapshot.targetBranch);
     snapshot.shelves = shelfService.Shelves(logCommands);
     snapshot.statusEntries = repository.Status(logCommands);
     snapshot.currentBranch = repository.CurrentBranch(logCommands);
@@ -50,7 +73,7 @@ RepositorySnapshot AppUi::LoadRepositorySnapshot(const std::filesystem::path& se
     const std::vector<ShelfWorkspaceFiles> workspaceShelves = snapshot.workspaceState.Shelves();
     for (const ShelfWorkspaceFiles& shelf : workspaceShelves)
     {
-        if (shelf.shelf == "main")
+        if (shelf.shelf == snapshot.targetBranch)
             continue;
 
         if (std::find(snapshot.shelves.begin(), snapshot.shelves.end(), shelf.shelf) == snapshot.shelves.end())
@@ -75,24 +98,44 @@ RepositorySnapshot AppUi::LoadRepositorySnapshot(const std::filesystem::path& se
     return snapshot;
 }
 
-ShelfJobResult AppUi::RunCreateShelfJob(const std::filesystem::path& repoRoot, std::string shelfName)
+ShelfJobResult AppUi::RunCreateShelfJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelfName, std::vector<std::string> files)
 {
     GitRepository repository(repoRoot);
     ShelfService shelfService;
     shelfService.SetRepository(&repository);
+    shelfService.SetTargetBranch(std::move(targetBranch));
 
     ShelfJobResult result;
     result.shelf = shelfService.MakeShelfBranch(shelfName);
+    result.files = std::move(files);
     result.succeeded = shelfService.CreateShelf(shelfName);
     result.selectShelf = result.succeeded;
+    result.addFilesState = result.succeeded && !result.files.empty();
     return result;
 }
 
-ShelfJobResult AppUi::RunShelveShelfJob(const std::filesystem::path& repoRoot, std::string shelf, std::vector<std::string> files)
+ShelfJobResult AppUi::RunSelectTargetBranchJob(const std::filesystem::path& repoRoot, std::string targetBranch)
 {
     GitRepository repository(repoRoot);
     ShelfService shelfService;
     shelfService.SetRepository(&repository);
+    shelfService.SetTargetBranch(targetBranch);
+
+    ShelfJobResult result;
+    result.shelf = std::move(targetBranch);
+    result.succeeded = repository.CheckoutBranch(result.shelf);
+    if (result.succeeded)
+        result.succeeded = shelfService.PullMain();
+    result.selectTargetBranch = result.succeeded;
+    return result;
+}
+
+ShelfJobResult AppUi::RunShelveShelfJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelf, std::vector<std::string> files)
+{
+    GitRepository repository(repoRoot);
+    ShelfService shelfService;
+    shelfService.SetRepository(&repository);
+    shelfService.SetTargetBranch(std::move(targetBranch));
 
     ShelfJobResult result;
     result.shelf = std::move(shelf);
@@ -101,11 +144,12 @@ ShelfJobResult AppUi::RunShelveShelfJob(const std::filesystem::path& repoRoot, s
     return result;
 }
 
-ShelfJobResult AppUi::RunSubmitShelfJob(const std::filesystem::path& repoRoot, std::string shelf, std::vector<std::string> files)
+ShelfJobResult AppUi::RunSubmitShelfJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelf, std::vector<std::string> files)
 {
     GitRepository repository(repoRoot);
     ShelfService shelfService;
     shelfService.SetRepository(&repository);
+    shelfService.SetTargetBranch(std::move(targetBranch));
 
     ShelfJobResult result;
     result.shelf = std::move(shelf);
@@ -117,28 +161,30 @@ ShelfJobResult AppUi::RunSubmitShelfJob(const std::filesystem::path& repoRoot, s
     return result;
 }
 
-ShelfJobResult AppUi::RunSubmitMainJob(const std::filesystem::path& repoRoot, std::vector<std::string> files, std::string summary, std::string description)
+ShelfJobResult AppUi::RunSubmitMainJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::vector<std::string> files, std::string summary, std::string description)
 {
     GitRepository repository(repoRoot);
     ShelfService shelfService;
     shelfService.SetRepository(&repository);
+    shelfService.SetTargetBranch(targetBranch);
 
     ShelfJobResult result;
-    result.shelf = "main";
+    result.shelf = std::move(targetBranch);
     result.files = std::move(files);
     result.succeeded = shelfService.SubmitMain(result.files, summary, description);
     result.clearMainActiveFiles = result.succeeded;
     return result;
 }
 
-ShelfJobResult AppUi::RunPullMainJob(const std::filesystem::path& repoRoot)
+ShelfJobResult AppUi::RunPullMainJob(const std::filesystem::path& repoRoot, std::string targetBranch)
 {
     GitRepository repository(repoRoot);
     ShelfService shelfService;
     shelfService.SetRepository(&repository);
+    shelfService.SetTargetBranch(targetBranch);
 
     ShelfJobResult result;
-    result.shelf = "main";
+    result.shelf = std::move(targetBranch);
     result.succeeded = shelfService.PullMain();
     return result;
 }
@@ -156,11 +202,12 @@ ShelfJobResult AppUi::RunDeleteShelfJob(const std::filesystem::path& repoRoot, s
     return result;
 }
 
-ShelfJobResult AppUi::RunRevertShelfFileJob(const std::filesystem::path& repoRoot, std::string shelf, std::string file)
+ShelfJobResult AppUi::RunRevertShelfFileJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelf, std::string file)
 {
     GitRepository repository(repoRoot);
     ShelfService shelfService;
     shelfService.SetRepository(&repository);
+    shelfService.SetTargetBranch(std::move(targetBranch));
 
     ShelfJobResult result;
     result.shelf = std::move(shelf);
@@ -232,6 +279,8 @@ void AppUi::PollAsyncOperations()
             m_hasSourcePath = false;
             m_repository.reset();
             m_shelfService.SetRepository(nullptr);
+            m_branches.clear();
+            m_targetBranch = "main";
             m_mainRemoteAvailable = false;
             m_mainBehindCount = 0;
             std::cout << "Failed to select source folder: " << m_sourcePathError << '\n';
@@ -255,9 +304,24 @@ void AppUi::PollAsyncOperations()
 
         if (result.selectShelf)
         {
+            if (!result.shelf.empty() && result.shelf != m_targetBranch && std::find(m_shelves.begin(), m_shelves.end(), result.shelf) == m_shelves.end())
+                m_shelves.push_back(result.shelf);
             m_selectedBranch = result.shelf;
             m_workspaceState.SetActiveShelf(result.shelf);
             m_workspaceState.Save();
+        }
+
+        if (result.selectTargetBranch)
+        {
+            m_targetBranch = result.shelf.empty() ? "main" : result.shelf;
+            m_selectedBranch = m_targetBranch;
+            m_workspaceState.SetTargetBranch(m_targetBranch);
+            m_workspaceState.SetActiveShelf(m_targetBranch);
+            m_workspaceState.Save();
+            m_currentGitBranch = m_targetBranch;
+            m_shelves.clear();
+            m_shelfLinks.clear();
+            m_shelfFiles.clear();
         }
 
         if (result.addFileState)
@@ -267,10 +331,20 @@ void AppUi::PollAsyncOperations()
             m_workspaceState.Save();
         }
 
+        if (result.addFilesState)
+        {
+            for (const std::string& file : result.files)
+                m_workspaceState.CheckOut(result.shelf, file);
+            m_workspaceState.SetActiveShelf(result.shelf);
+            m_workspaceState.Save();
+            m_selectedActiveShelf = result.shelf;
+            m_selectedActiveFiles = result.files;
+        }
+
         if (result.clearMainActiveFiles)
         {
             for (const std::string& file : result.files)
-                m_workspaceState.RevertCheckedOutFile("main", file);
+                m_workspaceState.RevertCheckedOutFile(result.shelf, file);
             m_workspaceState.Save();
         }
 
@@ -298,6 +372,13 @@ void AppUi::PollAsyncOperations()
         {
             if (m_selectedBranch == result.shelf)
                 ClearSelectedShelf();
+            m_shelves.erase(std::remove(m_shelves.begin(), m_shelves.end(), result.shelf), m_shelves.end());
+            m_shelfLinks.erase(std::remove_if(m_shelfLinks.begin(), m_shelfLinks.end(), [&result](const ShelfLinkEntry& link) {
+                return link.shelf == result.shelf;
+            }), m_shelfLinks.end());
+            m_shelfFiles.erase(std::remove_if(m_shelfFiles.begin(), m_shelfFiles.end(), [&result](const ShelfCommittedFileList& files) {
+                return files.shelf == result.shelf;
+            }), m_shelfFiles.end());
             m_workspaceState.DeleteShelf(result.shelf);
             m_workspaceState.Save();
         }
@@ -334,7 +415,11 @@ void AppUi::ApplyRepositorySnapshot(const RepositorySnapshot& snapshot)
     m_sourcePathError.clear();
     m_repository = GitRepository(snapshot.root);
     m_shelfService.SetRepository(&m_repository.value());
+    m_targetBranch = snapshot.targetBranch.empty() ? "main" : snapshot.targetBranch;
+    m_shelfService.SetTargetBranch(m_targetBranch);
     m_workspaceState = snapshot.workspaceState;
+    m_workspaceState.SetTargetBranch(m_targetBranch);
+    m_branches = snapshot.branches;
     m_shelves = snapshot.shelves;
     m_statusEntries = snapshot.statusEntries;
     m_currentGitBranch = snapshot.currentBranch;
@@ -347,9 +432,9 @@ void AppUi::ApplyRepositorySnapshot(const RepositorySnapshot& snapshot)
     if (!m_workspaceState.ActiveShelf().empty())
         m_selectedBranch = m_workspaceState.ActiveShelf();
     else
-        m_selectedBranch = "main";
+        m_selectedBranch = m_targetBranch;
 
-    if (m_selectedBranch != "main" && std::find(m_shelves.begin(), m_shelves.end(), m_selectedBranch) == m_shelves.end())
+    if (m_selectedBranch != m_targetBranch && std::find(m_shelves.begin(), m_shelves.end(), m_selectedBranch) == m_shelves.end())
         ClearSelectedShelf();
 }
 
@@ -362,6 +447,8 @@ void AppUi::StartRepositoryLoad(const std::filesystem::path& selectedPath)
     m_hasSourcePath = false;
     m_repository.reset();
     m_shelfService.SetRepository(nullptr);
+    m_targetBranch = "main";
+    m_branches.clear();
     m_mainRemoteAvailable = false;
     m_mainBehindCount = 0;
     m_repositoryLoadFuture = std::async(std::launch::async, [selectedPath]() {
@@ -482,7 +569,7 @@ void AppUi::OpenMainSubmitPopup()
 
 void AppUi::DrawMainSubmitPopup()
 {
-    constexpr std::string_view popupId = "Submit Main";
+    constexpr std::string_view popupId = "Submit Target Branch";
     if (m_openMainSubmitPopup)
     {
         ui::widgets::OpenPopup(popupId);
@@ -493,11 +580,11 @@ void AppUi::DrawMainSubmitPopup()
         return;
 
     const std::vector<std::string> files = MainSubmittableFiles();
-    ui::widgets::Text("Submit local Main changes.");
-    ui::widgets::Text("Main will be pulled before submitting.");
+    ui::widgets::Text("Submit local changes to " + m_targetBranch + ".");
+    ui::widgets::Text(m_targetBranch + " will be pulled before submitting.");
     ui::widgets::Text(std::to_string(files.size()) + " file(s)");
-    if (m_currentGitBranch != "main")
-        ui::widgets::Text("Checkout main branch to submit Main.");
+    if (m_currentGitBranch != m_targetBranch)
+        ui::widgets::Text("Checkout " + m_targetBranch + " branch to submit.");
     if (!m_mainSubmitError.empty())
         ui::widgets::Text(m_mainSubmitError);
 
@@ -507,8 +594,8 @@ void AppUi::DrawMainSubmitPopup()
     ui::widgets::Separator();
 
     const bool canSubmit = !files.empty() &&
-        m_currentGitBranch == "main" &&
-        !IsShelfBusy("main") &&
+        m_currentGitBranch == m_targetBranch &&
+        !IsShelfBusy(m_targetBranch) &&
         m_mainSubmitSummaryInput[0] != '\0';
     ui::widgets::BeginDisabled(!canSubmit);
     if (ui::widgets::Button("Submit"))
@@ -522,6 +609,54 @@ void AppUi::DrawMainSubmitPopup()
     if (ui::widgets::Button("Cancel"))
     {
         m_mainSubmitError.clear();
+        ui::widgets::CloseCurrentPopup();
+    }
+
+    ui::widgets::EndModal();
+}
+
+void AppUi::OpenCreateShelfPopup()
+{
+    std::fill(m_newShelfNameInput.begin(), m_newShelfNameInput.end(), '\0');
+    m_createShelfError.clear();
+    m_openCreateShelfPopup = true;
+}
+
+void AppUi::DrawCreateShelfPopup()
+{
+    constexpr std::string_view popupId = "Create Shelf";
+    if (m_openCreateShelfPopup)
+    {
+        ui::widgets::OpenPopup(popupId);
+        m_openCreateShelfPopup = false;
+    }
+
+    if (!ui::widgets::BeginModal(popupId))
+        return;
+
+    const size_t selectedCount = m_selectedActiveFiles.size();
+    ui::widgets::Text("Create a shelf from " + m_targetBranch + ".");
+    ui::widgets::Text(std::to_string(selectedCount) + " selected file(s) will move into it.");
+    if (!m_createShelfError.empty())
+        ui::widgets::Text(m_createShelfError);
+
+    ui::widgets::Separator();
+    ui::widgets::InputText("Branch name", m_newShelfNameInput.data(), m_newShelfNameInput.size());
+    ui::widgets::Separator();
+
+    const bool canCreate = m_repository.has_value() && m_newShelfNameInput[0] != '\0' && !IsShelfBusy(m_targetBranch);
+    ui::widgets::BeginDisabled(!canCreate);
+    if (ui::widgets::Button("Create"))
+    {
+        CreateShelfFromInput();
+        ui::widgets::CloseCurrentPopup();
+    }
+    ui::widgets::EndDisabled();
+
+    ui::widgets::SameLine();
+    if (ui::widgets::Button("Cancel"))
+    {
+        m_createShelfError.clear();
         ui::widgets::CloseCurrentPopup();
     }
 
@@ -546,6 +681,7 @@ void AppUi::Draw()
     DrawLog();
     DrawConfirmationPopup();
     DrawMainSubmitPopup();
+    DrawCreateShelfPopup();
 }
 
 void AppUi::DrawWorkspaceExplorer()
@@ -573,11 +709,25 @@ void AppUi::DrawWorkspaceExplorer()
         if (m_hasSourcePath)
         {
             ui::widgets::Text("Repo: " + m_sourcePath.string());
+            if (!m_branches.empty())
+            {
+                if (ui::widgets::BeginCombo("Target Branch", m_targetBranch))
+                {
+                    for (const std::string& branch : m_branches)
+                    {
+                        if (ui::widgets::Selectable(branch, branch == m_targetBranch))
+                            SelectTargetBranch(branch);
+                    }
+
+                    ui::widgets::EndCombo();
+                }
+            }
+
             if (m_mainBehindCount > 0)
             {
-                ui::widgets::Text("Main has " + std::to_string(m_mainBehindCount) + " update(s).");
+                ui::widgets::Text(m_targetBranch + " has " + std::to_string(m_mainBehindCount) + " update(s).");
                 ui::widgets::SameLine();
-                const bool canPull = m_currentGitBranch == "main" && !IsShelfBusy("main");
+                const bool canPull = m_currentGitBranch == m_targetBranch && !IsShelfBusy(m_targetBranch);
                 ui::widgets::BeginDisabled(!canPull);
                 if (ui::widgets::Button("Pull"))
                     PullMain();
@@ -585,7 +735,7 @@ void AppUi::DrawWorkspaceExplorer()
             }
             else if (m_mainRemoteAvailable)
             {
-                ui::widgets::Text("Main is up to date.");
+                ui::widgets::Text(m_targetBranch + " is up to date.");
             }
 
             ui::widgets::BeginScrollRegion("WorkspaceExplorerScroll");
@@ -616,11 +766,6 @@ void AppUi::DrawFileChanges()
             return;
         }
 
-        ui::widgets::InputText("New Shelf", m_newShelfNameInput.data(), m_newShelfNameInput.size());
-        if (ui::widgets::Button("Create Shelf"))
-            CreateShelfFromInput();
-
-        ui::widgets::SameLine();
         if (ui::widgets::Button("Refresh"))
             RefreshRepositoryData();
 
@@ -761,7 +906,7 @@ void AppUi::DrawFileEntry(const std::filesystem::directory_entry& entry)
         {
             if (ui::widgets::MenuItem("Check out", true))
             {
-                SelectShelf("main");
+                SelectShelf(m_targetBranch);
                 CheckOutFile(entry.path());
             }
         }
@@ -835,7 +980,7 @@ void AppUi::PruneInvalidWorkspaceShelves()
     const std::vector<ShelfWorkspaceFiles> workspaceShelves = m_workspaceState.Shelves();
     for (const ShelfWorkspaceFiles& shelf : workspaceShelves)
     {
-        if (shelf.shelf == "main")
+        if (shelf.shelf == m_targetBranch)
             continue;
 
         if (std::find(m_shelves.begin(), m_shelves.end(), shelf.shelf) == m_shelves.end())
@@ -851,7 +996,7 @@ void AppUi::PruneInvalidWorkspaceShelves()
 
 void AppUi::DrawShelfList()
 {
-    DrawShelfPanel("main", true);
+    DrawShelfPanel(m_targetBranch, true);
 
     ui::widgets::Separator();
     ui::widgets::Text("Shelves");
@@ -868,7 +1013,7 @@ void AppUi::DrawShelfList()
 
 void AppUi::DrawShelfPanel(const std::string& shelf, bool isMainShelf)
 {
-    const std::string title = isMainShelf ? "Main" : shelf;
+    const std::string title = isMainShelf ? ("Main (" + m_targetBranch + ")") : shelf;
     const bool shelfBusy = IsShelfBusy(shelf);
     if (shelfBusy)
         ui::widgets::BeginDisabled();
@@ -922,6 +1067,7 @@ void AppUi::DrawShelfPanel(const std::string& shelf, bool isMainShelf)
 
     const std::vector<std::string> mainFiles = isMainShelf ? MainActiveFiles() : std::vector<std::string>{};
     const std::vector<std::string>& files = isMainShelf ? mainFiles : m_workspaceState.CheckedOutFiles(shelf);
+    ui::widgets::Text("Active Changes");
     if (files.empty())
     {
         ui::widgets::Text("No active changes assigned to this shelf.");
@@ -929,8 +1075,24 @@ void AppUi::DrawShelfPanel(const std::string& shelf, bool isMainShelf)
     else
     {
         const std::vector<std::string> filesCopy = files;
-        for (const std::string& file : filesCopy)
-            DrawShelfFile(shelf, file);
+        for (size_t fileIndex = 0; fileIndex < filesCopy.size(); ++fileIndex)
+            DrawShelfFile(shelf, filesCopy, fileIndex);
+    }
+
+    if (ui::widgets::BeginContextMenuForCurrentWindow("ActiveChangesContext/" + shelf))
+    {
+        if (ui::widgets::MenuItem("Create Shelf", !IsShelfBusy(m_targetBranch)))
+        {
+            if (m_selectedActiveShelf != shelf)
+            {
+                m_selectedActiveShelf = shelf;
+                m_selectedActiveFiles.clear();
+                m_hasLastSelectedActiveFileIndex = false;
+            }
+            OpenCreateShelfPopup();
+        }
+
+        ui::widgets::EndContextMenu();
     }
 
     if (!isMainShelf)
@@ -959,20 +1121,25 @@ void AppUi::DrawShelfPanel(const std::string& shelf, bool isMainShelf)
         ui::widgets::EndDisabled();
 }
 
-void AppUi::DrawShelfFile(const std::string& shelf, const std::string& file)
+void AppUi::DrawShelfFile(const std::string& shelf, const std::vector<std::string>& files, size_t fileIndex)
 {
-    ui::widgets::Selectable(file + "##" + shelf + "/" + file, false);
-    ui::widgets::DragDropSource("p4v-git-file", shelf + "\n" + file, file);
+    if (fileIndex >= files.size())
+        return;
+
+    const std::string& file = files[fileIndex];
+    const bool selected = IsActiveFileSelected(shelf, file);
+    if (ui::widgets::Selectable(file + "##" + shelf + "/" + file, selected))
+        SelectActiveFile(shelf, files, fileIndex);
+
+    const std::vector<std::string> dragFiles = SelectedFilesForShelf(shelf, file);
+    const std::string dragLabel = dragFiles.size() > 1 ? (std::to_string(dragFiles.size()) + " files") : file;
+    ui::widgets::DragDropSource("p4v-git-file", BuildDragPayload(shelf, dragFiles), dragLabel);
 
     if (ui::widgets::BeginContextMenuForLastItem())
     {
+        const std::vector<std::string> actionFiles = SelectedFilesForShelf(shelf, file);
         if (ui::widgets::MenuItem("Revert", true))
-        {
-            if (HasLocalChanges(file))
-                RequestConfirmation(ConfirmationAction::RevertActiveFile, shelf, file);
-            else
-                RevertCheckedOutFile(shelf, file);
-        }
+            RevertCheckedOutFiles(shelf, actionFiles);
         ui::widgets::EndContextMenu();
     }
 }
@@ -1000,9 +1167,9 @@ void AppUi::DrawShelfCommittedFile(const std::string& shelf, const GitStatusEntr
 
 void AppUi::SelectShelf(std::string_view shelf)
 {
-    if (shelf.empty() || shelf == "main")
+    if (shelf.empty() || shelf == m_targetBranch)
     {
-        m_selectedBranch = "main";
+        m_selectedBranch = m_targetBranch;
         m_workspaceState.SetActiveShelf(m_selectedBranch);
         m_workspaceState.Save();
         return;
@@ -1022,7 +1189,7 @@ void AppUi::SelectShelf(std::string_view shelf)
 
 void AppUi::ClearSelectedShelf()
 {
-    m_selectedBranch = "main";
+    m_selectedBranch = m_targetBranch;
     m_workspaceState.SetActiveShelf(m_selectedBranch);
     m_workspaceState.Save();
 }
@@ -1067,13 +1234,13 @@ std::vector<GitStatusEntry> AppUi::ShelfFiles(std::string_view shelf) const
 std::vector<std::string> AppUi::MainActiveFiles() const
 {
     std::vector<std::string> files;
-    for (const std::string& file : m_workspaceState.CheckedOutFiles("main"))
+    for (const std::string& file : m_workspaceState.CheckedOutFiles(m_targetBranch))
     {
         if (!IsFileActiveInShelf(file))
             files.push_back(file);
     }
 
-    if (m_currentGitBranch == "main")
+    if (m_currentGitBranch == m_targetBranch)
     {
         for (const GitStatusEntry& entry : m_statusEntries)
         {
@@ -1105,8 +1272,8 @@ std::optional<std::string> AppUi::ActiveShelfForFile(std::string_view relativePa
             return shelf.shelf;
     }
 
-    if (m_currentGitBranch == "main" && HasLocalChanges(relativePath))
-        return "main";
+    if (m_currentGitBranch == m_targetBranch && HasLocalChanges(relativePath))
+        return m_targetBranch;
 
     return std::nullopt;
 }
@@ -1115,7 +1282,7 @@ bool AppUi::IsFileActiveInShelf(std::string_view relativePath) const
 {
     for (const ShelfWorkspaceFiles& shelf : m_workspaceState.Shelves())
     {
-        if (shelf.shelf == "main")
+        if (shelf.shelf == m_targetBranch)
             continue;
 
         if (std::find(shelf.files.begin(), shelf.files.end(), relativePath) != shelf.files.end())
@@ -1137,7 +1304,7 @@ bool AppUi::IsFileActive(std::string_view relativePath) const
     if (m_workspaceState.IsCheckedOut(relativePath))
         return true;
 
-    if (m_currentGitBranch != "main")
+    if (m_currentGitBranch != m_targetBranch)
         return false;
 
     return std::any_of(m_statusEntries.begin(), m_statusEntries.end(), [relativePath](const GitStatusEntry& entry) {
@@ -1145,17 +1312,111 @@ bool AppUi::IsFileActive(std::string_view relativePath) const
     });
 }
 
-void AppUi::MoveCheckedOutFile(std::string_view payload, std::string_view toShelf)
+bool AppUi::IsActiveFileSelected(std::string_view shelf, std::string_view file) const
 {
-    const size_t separator = payload.find('\n');
-    if (separator == std::string_view::npos)
+    if (m_selectedActiveShelf != shelf)
+        return false;
+
+    return std::find(m_selectedActiveFiles.begin(), m_selectedActiveFiles.end(), file) != m_selectedActiveFiles.end();
+}
+
+std::vector<std::string> AppUi::SelectedFilesForShelf(std::string_view shelf, std::string_view fallbackFile) const
+{
+    if (m_selectedActiveShelf == shelf &&
+        std::find(m_selectedActiveFiles.begin(), m_selectedActiveFiles.end(), fallbackFile) != m_selectedActiveFiles.end())
+    {
+        return m_selectedActiveFiles;
+    }
+
+    return { std::string(fallbackFile) };
+}
+
+std::string AppUi::BuildDragPayload(std::string_view shelf, const std::vector<std::string>& files) const
+{
+    std::string payload(shelf);
+    for (const std::string& file : files)
+    {
+        payload += '\n';
+        payload += file;
+    }
+
+    return payload;
+}
+
+void AppUi::SelectActiveFile(const std::string& shelf, const std::vector<std::string>& files, size_t fileIndex)
+{
+    if (fileIndex >= files.size())
         return;
 
-    const std::string_view fromShelf = payload.substr(0, separator);
-    const std::string_view file = payload.substr(separator + 1);
-    m_workspaceState.MoveCheckedOutFile(fromShelf, toShelf, file);
+    const bool sameShelf = m_selectedActiveShelf == shelf;
+    if (ui::widgets::IsShiftDown() && sameShelf && m_hasLastSelectedActiveFileIndex)
+    {
+        const size_t first = std::min(m_lastSelectedActiveFileIndex, fileIndex);
+        const size_t last = std::max(m_lastSelectedActiveFileIndex, fileIndex);
+        m_selectedActiveFiles.clear();
+        for (size_t index = first; index <= last && index < files.size(); ++index)
+            m_selectedActiveFiles.push_back(files[index]);
+    }
+    else if (ui::widgets::IsCtrlDown() && sameShelf)
+    {
+        auto selectedFile = std::find(m_selectedActiveFiles.begin(), m_selectedActiveFiles.end(), files[fileIndex]);
+        if (selectedFile == m_selectedActiveFiles.end())
+            m_selectedActiveFiles.push_back(files[fileIndex]);
+        else
+            m_selectedActiveFiles.erase(selectedFile);
+    }
+    else
+    {
+        m_selectedActiveFiles = { files[fileIndex] };
+    }
+
+    m_selectedActiveShelf = shelf;
+    m_lastSelectedActiveFileIndex = fileIndex;
+    m_hasLastSelectedActiveFileIndex = true;
+}
+
+void AppUi::MoveCheckedOutFile(std::string_view payload, std::string_view toShelf)
+{
+    std::vector<std::string_view> lines;
+    size_t cursor = 0;
+    while (cursor <= payload.size())
+    {
+        const size_t next = payload.find('\n', cursor);
+        if (next == std::string_view::npos)
+        {
+            lines.push_back(payload.substr(cursor));
+            break;
+        }
+
+        lines.push_back(payload.substr(cursor, next - cursor));
+        cursor = next + 1;
+    }
+
+    if (lines.size() < 2)
+        return;
+
+    const std::string_view fromShelf = lines.front();
+    if (fromShelf == toShelf)
+        return;
+
+    std::vector<std::string> movedFiles;
+    for (size_t index = 1; index < lines.size(); ++index)
+    {
+        if (lines[index].empty())
+            continue;
+
+        m_workspaceState.MoveCheckedOutFile(fromShelf, toShelf, lines[index]);
+        movedFiles.push_back(std::string(lines[index]));
+    }
+
+    if (movedFiles.empty())
+        return;
+
+    m_selectedActiveShelf = std::string(toShelf);
+    m_selectedActiveFiles = movedFiles;
+    m_hasLastSelectedActiveFileIndex = false;
     m_workspaceState.Save();
-    std::cout << "Moved " << file << " from " << fromShelf << " to " << toShelf << '\n';
+    std::cout << "Moved " << movedFiles.size() << " file(s) from " << fromShelf << " to " << toShelf << '\n';
 }
 
 void AppUi::RevertCheckedOutFile(const std::string& shelf, const std::string& file)
@@ -1177,14 +1438,30 @@ void AppUi::RevertCheckedOutFile(const std::string& shelf, const std::string& fi
     }));
 }
 
+void AppUi::RevertCheckedOutFiles(const std::string& shelf, const std::vector<std::string>& files)
+{
+    for (const std::string& file : files)
+    {
+        if (HasLocalChanges(file))
+        {
+            RequestConfirmation(ConfirmationAction::RevertActiveFile, shelf, file);
+            return;
+        }
+    }
+
+    for (const std::string& file : files)
+        RevertCheckedOutFile(shelf, file);
+}
+
 void AppUi::RevertShelfFile(const std::string& shelf, const std::string& file)
 {
     if (IsShelfBusy(shelf))
         return;
 
     const std::filesystem::path repoRoot = m_sourcePath;
-    StartShelfJob(shelf, "Reverting", std::async(std::launch::async, [repoRoot, shelf, file]() {
-        return RunRevertShelfFileJob(repoRoot, shelf, file);
+    const std::string targetBranch = m_targetBranch;
+    StartShelfJob(shelf, "Reverting", std::async(std::launch::async, [repoRoot, targetBranch, shelf, file]() {
+        return RunRevertShelfFileJob(repoRoot, targetBranch, shelf, file);
     }));
 }
 
@@ -1209,10 +1486,26 @@ void AppUi::CreateShelfFromInput()
         return;
 
     const std::filesystem::path repoRoot = m_sourcePath;
-    StartShelfJob("main", "Creating shelf", std::async(std::launch::async, [repoRoot, shelfName]() {
-        return RunCreateShelfJob(repoRoot, shelfName);
+    const std::string targetBranch = m_targetBranch;
+    std::vector<std::string> files;
+    if (!m_selectedActiveShelf.empty())
+        files = m_selectedActiveFiles;
+
+    StartShelfJob(targetBranch, "Creating shelf", std::async(std::launch::async, [repoRoot, targetBranch, shelfName, files = std::move(files)]() mutable {
+        return RunCreateShelfJob(repoRoot, targetBranch, shelfName, std::move(files));
     }));
     std::fill(m_newShelfNameInput.begin(), m_newShelfNameInput.end(), '\0');
+}
+
+void AppUi::SelectTargetBranch(std::string branch)
+{
+    if (!m_repository.has_value() || branch.empty() || branch == m_targetBranch || IsShelfBusy(m_targetBranch))
+        return;
+
+    const std::filesystem::path repoRoot = m_sourcePath;
+    StartShelfJob(m_targetBranch, "Switching branch", std::async(std::launch::async, [repoRoot, branch]() {
+        return RunSelectTargetBranchJob(repoRoot, branch);
+    }));
 }
 
 void AppUi::ShelveShelf(const std::string& shelf)
@@ -1221,9 +1514,10 @@ void AppUi::ShelveShelf(const std::string& shelf)
         return;
 
     const std::filesystem::path repoRoot = m_sourcePath;
+    const std::string targetBranch = m_targetBranch;
     const std::vector<std::string> files = m_workspaceState.CheckedOutFiles(shelf);
-    StartShelfJob(shelf, "Shelving", std::async(std::launch::async, [repoRoot, shelf, files]() {
-        return RunShelveShelfJob(repoRoot, shelf, files);
+    StartShelfJob(shelf, "Shelving", std::async(std::launch::async, [repoRoot, targetBranch, shelf, files]() {
+        return RunShelveShelfJob(repoRoot, targetBranch, shelf, files);
     }));
 }
 
@@ -1233,15 +1527,16 @@ void AppUi::SubmitShelf(const std::string& shelf)
         return;
 
     const std::filesystem::path repoRoot = m_sourcePath;
+    const std::string targetBranch = m_targetBranch;
     const std::vector<std::string> files = m_workspaceState.CheckedOutFiles(shelf);
-    StartShelfJob(shelf, "Submitting", std::async(std::launch::async, [repoRoot, shelf, files]() {
-        return RunSubmitShelfJob(repoRoot, shelf, files);
+    StartShelfJob(shelf, "Submitting", std::async(std::launch::async, [repoRoot, targetBranch, shelf, files]() {
+        return RunSubmitShelfJob(repoRoot, targetBranch, shelf, files);
     }));
 }
 
 void AppUi::SubmitMainFromPopup()
 {
-    if (IsShelfBusy("main"))
+    if (IsShelfBusy(m_targetBranch))
         return;
 
     std::vector<std::string> files = MainSubmittableFiles();
@@ -1249,7 +1544,7 @@ void AppUi::SubmitMainFromPopup()
     const std::string description = m_mainSubmitDescriptionInput.data();
     if (files.empty())
     {
-        m_mainSubmitError = "No Main changes to submit.";
+        m_mainSubmitError = "No changes to submit.";
         return;
     }
 
@@ -1260,19 +1555,21 @@ void AppUi::SubmitMainFromPopup()
     }
 
     const std::filesystem::path repoRoot = m_sourcePath;
-    StartShelfJob("main", "Submitting", std::async(std::launch::async, [repoRoot, files = std::move(files), summary, description]() mutable {
-        return RunSubmitMainJob(repoRoot, std::move(files), summary, description);
+    const std::string targetBranch = m_targetBranch;
+    StartShelfJob(targetBranch, "Submitting", std::async(std::launch::async, [repoRoot, targetBranch, files = std::move(files), summary, description]() mutable {
+        return RunSubmitMainJob(repoRoot, targetBranch, std::move(files), summary, description);
     }));
 }
 
 void AppUi::PullMain()
 {
-    if (IsShelfBusy("main"))
+    if (IsShelfBusy(m_targetBranch))
         return;
 
     const std::filesystem::path repoRoot = m_sourcePath;
-    StartShelfJob("main", "Pulling", std::async(std::launch::async, [repoRoot]() {
-        return RunPullMainJob(repoRoot);
+    const std::string targetBranch = m_targetBranch;
+    StartShelfJob(targetBranch, "Pulling", std::async(std::launch::async, [repoRoot, targetBranch]() {
+        return RunPullMainJob(repoRoot, targetBranch);
     }));
 }
 
