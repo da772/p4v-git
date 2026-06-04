@@ -1,0 +1,96 @@
+p4v-git changelog
+==================
+
+0.1.14
+- Reworked README features to emphasize Perforce-like workflows backed by Git.
+- Removed the README Notes section so implementation details live in this changelog instead.
+
+0.1.13
+- Updated the project description to better explain the P4V-inspired Git workflow.
+- Added the app icon to README.md.
+- Moved accumulated implementation notes out of README.md into this versioned changelog.
+
+0.1.12
+- Added a hidden process runner for Windows so Git, curl, VS Code, and browser commands run without command windows popping up.
+- Switched Git command execution and GitHub helper commands away from _popen on Windows.
+- Routed URL opening through the hidden process runner.
+- Created the GLFW window hidden, applied runtime icons, then showed it to avoid Windows capturing the default icon too early.
+- Added *.aps to .gitignore for resource compiler cache files.
+
+0.1.11
+- Changed Git status refresh to use full untracked file expansion with `git status --porcelain=v1 -z -uall`.
+- Fixed active changes for files inside newly added folders so they show as full repo-relative paths.
+- Changed Windows builds to use the GUI subsystem with `mainCRTStartup`.
+- Linked Shell32 for Windows icon extraction.
+
+0.1.10
+- Added blank-space click behavior to clear selected active-change files.
+- Pruned selected active-change files when they are no longer active or checked out.
+- Switched Git status parsing to NUL-delimited porcelain output.
+- Improved Windows runtime icon assignment with Win32 big/small window and class icons.
+
+0.1.9
+- Added embedded runtime icon pixel data generated from icon.png.
+- Applied runtime window icons through GLFW on platforms that support per-window icons.
+- Added Windows shared icon resource IDs for C++ and resource files.
+
+0.1.8
+- Enabled MSVC multi-process compilation with /MP for the app and ImGui targets.
+- Added a right-click Diff action for active changes.
+- Opened file diffs in VS Code with `code --reuse-window --diff` without waiting on VS Code.
+- Stored temporary diff files under `.git/p4v-git/diffs`.
+
+0.1.7
+- Added Windows executable icon embedding through icon.ico and a resource file.
+- Added Linux desktop entry and hicolor icon installation using icon.png.
+- Added macOS icon generation from icon.png into p4v-git.icns for app bundles.
+- Added icon resources to the CMake/MSVC project structure.
+
+0.1.6
+- Added target branch persistence in workspace state.
+- Made shelf branch naming target-aware with `shelves/<user>/<target>/<shelf>`.
+- Moved shelf creation into the Active Changes context menu.
+- Added active-change multi-select with Ctrl and Shift.
+- Added multi-file drag/drop between shelves.
+- Inserted newly created shelves into the UI immediately after creation.
+- Added target branch selection in Workspace Explorer.
+- Made submits target the selected branch instead of always using main.
+
+0.1.5
+- Added application versioning through CMake and generated P4vGitVersion.h.
+- Updated merge-tool launching so VS Code is opened without blocking indefinitely.
+
+0.1.4
+- Added pull-before-submit workflow.
+- Added pull status for the selected mainline branch.
+- Added support for submitting local target-branch changes with summary and description.
+- Improved shelf submit cleanup so submitted shelves are removed from the app and branch state.
+
+0.1.3
+- Added background Git operations so refreshes and shelf actions do not block the main UI thread.
+- Added busy/disabled shelf UI states with spinners.
+- Added slower auto-refresh and refresh deferral while Git mutations are running.
+- Added focus-triggered refresh behavior.
+
+0.1.2
+- Added Git-backed shelf services for branch-backed shelves.
+- Added GitHub pull request creation, shelf link lookup, submit/merge, and branch deletion.
+- Added checked-out workspace state under `.git/p4v-git/state.json`.
+- Added Workspace Explorer file checkout/revert context actions.
+- Added File Changes shelf panels, shelf file lists, links, submit, shelve, delete, restore, and revert actions.
+- Added auto-scrolling log behavior.
+
+0.1.1
+- Refactored the single-file prototype into Application, renderer, GUI, and UI layers.
+- Added abstract renderer, GUI, and GLFW-facing interfaces.
+- Added ImGui docking base and reusable UI widget wrappers.
+- Added Workspace Explorer, File Changes, and Log dock panels.
+- Added default dock placement for left, center, and bottom panels.
+- Added MSVC source groups for project folders.
+
+0.1.0
+- Bootstrapped the cross-platform C++20 desktop app.
+- Added CMake, Vulkan, GLFW, and Dear ImGui docking branch integration.
+- Created a GLFW native window using Vulkan with FIFO present mode for VSync.
+- Initialized Dear ImGui with docking enabled.
+- Rendered the ImGui demo window.
