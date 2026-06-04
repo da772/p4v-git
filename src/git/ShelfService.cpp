@@ -100,7 +100,7 @@ bool ShelfService::ShelveFiles(std::string_view shelfBranch, const std::vector<s
     return addSucceeded && committed;
 }
 
-std::string ShelfService::ShareShelf(std::string_view shelfBranch)
+std::string ShelfService::ShareShelfAsPullRequest(std::string_view shelfBranch)
 {
     if (m_repository == nullptr || shelfBranch.empty())
         return {};
@@ -108,25 +108,28 @@ std::string ShelfService::ShareShelf(std::string_view shelfBranch)
     if (!m_repository->Run("push -u origin " + Quote(shelfBranch)).Succeeded())
         return {};
 
-    return ToGitHubBranchUrl(m_repository->RemoteUrl("origin"), shelfBranch);
+    return ToGitHubPullRequestUrl(m_repository->RemoteUrl("origin"), shelfBranch);
 }
 
-bool ShelfService::SubmitShelf(std::string_view shelfBranch)
+std::string ShelfService::SubmitShelfUrl(std::string_view shelfBranch)
+{
+    if (m_repository == nullptr || shelfBranch.empty())
+        return {};
+
+    return ToGitHubPullRequestUrl(m_repository->RemoteUrl("origin"), shelfBranch);
+}
+
+bool ShelfService::DeleteShelf(std::string_view shelfBranch, bool deleteRemote)
 {
     if (m_repository == nullptr || shelfBranch.empty())
         return false;
 
-    const std::string currentBranch = m_repository->CurrentBranch();
-    bool succeeded = m_repository->Run("switch main").Succeeded();
-    if (succeeded)
-        succeeded = m_repository->Run("pull --ff-only origin main").Succeeded();
-    if (succeeded)
-        succeeded = m_repository->Run("merge --no-ff " + Quote(shelfBranch) + " -m " + Quote("Submit " + std::string(shelfBranch))).Succeeded();
-    if (succeeded)
-        succeeded = m_repository->Run("push origin main").Succeeded();
+    bool succeeded = true;
+    if (deleteRemote)
+        succeeded = m_repository->Run("push origin --delete " + Quote(shelfBranch)).Succeeded() && succeeded;
 
-    if (!currentBranch.empty() && currentBranch != "main")
-        m_repository->Run("switch " + Quote(currentBranch));
+    if (m_repository->BranchExists(shelfBranch))
+        succeeded = m_repository->Run("branch -D " + Quote(shelfBranch)).Succeeded() && succeeded;
 
     return succeeded;
 }
@@ -163,6 +166,18 @@ std::string ShelfService::ToGitHubBranchUrl(std::string remoteUrl, std::string_v
         remoteUrl = "https://github.com/" + remoteUrl.substr(gitHubSshPrefix.size());
 
     return remoteUrl + "/tree/" + std::string(branch);
+}
+
+std::string ShelfService::ToGitHubPullRequestUrl(std::string remoteUrl, std::string_view branch)
+{
+    if (remoteUrl.ends_with(".git"))
+        remoteUrl.resize(remoteUrl.size() - 4);
+
+    const std::string gitHubSshPrefix = "git@github.com:";
+    if (remoteUrl.rfind(gitHubSshPrefix, 0) == 0)
+        remoteUrl = "https://github.com/" + remoteUrl.substr(gitHubSshPrefix.size());
+
+    return remoteUrl + "/compare/main..." + std::string(branch) + "?quick_pull=1";
 }
 
 std::string ShelfService::Quote(std::string_view text)
