@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(p4v-git
-    VERSION 0.1.12
-    DESCRIPTION "A P4V-style Git desktop client"
+    VERSION 0.1.14
+    DESCRIPTION "A cross-platform P4V-inspired Git desktop client with shelves, workspace changes, and review workflows"
     LANGUAGES CXX
 )
 
@@ -21,6 +21,8 @@ configure_file(
 )
 
 set(P4VGIT_RESOURCE_FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/CHANGELOG.txt"
+    "${CMAKE_CURRENT_SOURCE_DIR}/README.md"
     "${CMAKE_CURRENT_SOURCE_DIR}/icon.ico"
     "${CMAKE_CURRENT_SOURCE_DIR}/icon.png"
 )
