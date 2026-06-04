@@ -364,7 +364,7 @@ void AppUi::OpenSelectedPullRequest()
     if (!HasWritableShelfSelected())
         return;
 
-    m_pullRequestLink = m_shelfService.PullRequestUrl(m_selectedBranch);
+    m_pullRequestLink = m_shelfService.EnsurePullRequest(m_selectedBranch);
     if (!m_pullRequestLink.empty())
     {
         std::cout << "Open PR: " << m_pullRequestLink << '\n';
