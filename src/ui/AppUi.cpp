@@ -42,6 +42,9 @@ RepositorySnapshot AppUi::LoadRepositorySnapshot(const std::filesystem::path& se
     snapshot.shelves = shelfService.Shelves(logCommands);
     snapshot.statusEntries = repository.Status(logCommands);
     snapshot.currentBranch = repository.CurrentBranch(logCommands);
+    const MainSyncStatus mainSyncStatus = shelfService.RefreshMain(logCommands);
+    snapshot.mainRemoteAvailable = mainSyncStatus.remoteAvailable;
+    snapshot.mainBehindCount = mainSyncStatus.behindCount;
 
     bool stateChanged = false;
     const std::vector<ShelfWorkspaceFiles> workspaceShelves = snapshot.workspaceState.Shelves();
@@ -98,7 +101,7 @@ ShelfJobResult AppUi::RunShelveShelfJob(const std::filesystem::path& repoRoot, s
     return result;
 }
 
-ShelfJobResult AppUi::RunSubmitShelfJob(const std::filesystem::path& repoRoot, std::string shelf)
+ShelfJobResult AppUi::RunSubmitShelfJob(const std::filesystem::path& repoRoot, std::string shelf, std::vector<std::string> files)
 {
     GitRepository repository(repoRoot);
     ShelfService shelfService;
@@ -106,9 +109,10 @@ ShelfJobResult AppUi::RunSubmitShelfJob(const std::filesystem::path& repoRoot, s
 
     ShelfJobResult result;
     result.shelf = std::move(shelf);
-    result.submit = shelfService.SubmitShelf(result.shelf);
+    result.files = std::move(files);
+    result.submit = shelfService.SubmitShelf(result.shelf, result.files);
     result.shelfUrl = result.submit.shelfUrl;
-    result.succeeded = !result.shelfUrl.empty();
+    result.succeeded = result.submit.merged;
     result.deleteShelfState = result.submit.merged;
     return result;
 }
@@ -124,6 +128,18 @@ ShelfJobResult AppUi::RunSubmitMainJob(const std::filesystem::path& repoRoot, st
     result.files = std::move(files);
     result.succeeded = shelfService.SubmitMain(result.files, summary, description);
     result.clearMainActiveFiles = result.succeeded;
+    return result;
+}
+
+ShelfJobResult AppUi::RunPullMainJob(const std::filesystem::path& repoRoot)
+{
+    GitRepository repository(repoRoot);
+    ShelfService shelfService;
+    shelfService.SetRepository(&repository);
+
+    ShelfJobResult result;
+    result.shelf = "main";
+    result.succeeded = shelfService.PullMain();
     return result;
 }
 
@@ -216,6 +232,8 @@ void AppUi::PollAsyncOperations()
             m_hasSourcePath = false;
             m_repository.reset();
             m_shelfService.SetRepository(nullptr);
+            m_mainRemoteAvailable = false;
+            m_mainBehindCount = 0;
             std::cout << "Failed to select source folder: " << m_sourcePathError << '\n';
         }
     }
@@ -320,6 +338,8 @@ void AppUi::ApplyRepositorySnapshot(const RepositorySnapshot& snapshot)
     m_shelves = snapshot.shelves;
     m_statusEntries = snapshot.statusEntries;
     m_currentGitBranch = snapshot.currentBranch;
+    m_mainRemoteAvailable = snapshot.mainRemoteAvailable;
+    m_mainBehindCount = snapshot.mainBehindCount;
     m_shelfLinks = snapshot.shelfLinks;
     m_shelfFiles = snapshot.shelfFiles;
     m_lastRefreshTime = std::chrono::steady_clock::now();
@@ -342,6 +362,8 @@ void AppUi::StartRepositoryLoad(const std::filesystem::path& selectedPath)
     m_hasSourcePath = false;
     m_repository.reset();
     m_shelfService.SetRepository(nullptr);
+    m_mainRemoteAvailable = false;
+    m_mainBehindCount = 0;
     m_repositoryLoadFuture = std::async(std::launch::async, [selectedPath]() {
         return LoadRepositorySnapshot(selectedPath, true, true, 0);
     });
@@ -550,6 +572,21 @@ void AppUi::DrawWorkspaceExplorer()
         if (m_hasSourcePath)
         {
             ui::widgets::Text("Repo: " + m_sourcePath.string());
+            if (m_mainBehindCount > 0)
+            {
+                ui::widgets::Text("Main has " + std::to_string(m_mainBehindCount) + " update(s).");
+                ui::widgets::SameLine();
+                const bool canPull = m_currentGitBranch == "main" && !IsShelfBusy("main");
+                ui::widgets::BeginDisabled(!canPull);
+                if (ui::widgets::Button("Pull"))
+                    PullMain();
+                ui::widgets::EndDisabled();
+            }
+            else if (m_mainRemoteAvailable)
+            {
+                ui::widgets::Text("Main is up to date.");
+            }
+
             ui::widgets::BeginScrollRegion("WorkspaceExplorerScroll");
             DrawDirectory(m_sourcePath, 0);
             ui::widgets::EndScrollRegion();
@@ -1195,8 +1232,9 @@ void AppUi::SubmitShelf(const std::string& shelf)
         return;
 
     const std::filesystem::path repoRoot = m_sourcePath;
-    StartShelfJob(shelf, "Submitting", std::async(std::launch::async, [repoRoot, shelf]() {
-        return RunSubmitShelfJob(repoRoot, shelf);
+    const std::vector<std::string> files = m_workspaceState.CheckedOutFiles(shelf);
+    StartShelfJob(shelf, "Submitting", std::async(std::launch::async, [repoRoot, shelf, files]() {
+        return RunSubmitShelfJob(repoRoot, shelf, files);
     }));
 }
 
@@ -1223,6 +1261,17 @@ void AppUi::SubmitMainFromPopup()
     const std::filesystem::path repoRoot = m_sourcePath;
     StartShelfJob("main", "Submitting", std::async(std::launch::async, [repoRoot, files = std::move(files), summary, description]() mutable {
         return RunSubmitMainJob(repoRoot, std::move(files), summary, description);
+    }));
+}
+
+void AppUi::PullMain()
+{
+    if (IsShelfBusy("main"))
+        return;
+
+    const std::filesystem::path repoRoot = m_sourcePath;
+    StartShelfJob("main", "Pulling", std::async(std::launch::async, [repoRoot]() {
+        return RunPullMainJob(repoRoot);
     }));
 }
 

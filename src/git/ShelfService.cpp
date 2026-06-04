@@ -615,6 +615,50 @@ bool ShelfService::SubmitMain(const std::vector<std::string>& files, std::string
     return m_repository->Run("push origin main").Succeeded();
 }
 
+MainSyncStatus ShelfService::RefreshMain(bool logCommand) const
+{
+    MainSyncStatus status;
+    if (m_repository == nullptr)
+        return status;
+
+    status.fetched = m_repository->Run("fetch origin main", logCommand).Succeeded();
+    status.remoteAvailable = m_repository->Run("rev-parse --verify --quiet origin/main", logCommand).Succeeded();
+    if (!status.remoteAvailable)
+        return status;
+
+    const std::string countText = TrimText(m_repository->Run("rev-list --count main..origin/main", logCommand).output);
+    if (!countText.empty())
+    {
+        try
+        {
+            status.behindCount = std::max(0, std::stoi(countText));
+        }
+        catch (...)
+        {
+            status.behindCount = 0;
+        }
+    }
+
+    return status;
+}
+
+bool ShelfService::PullMain()
+{
+    if (m_repository == nullptr)
+        return false;
+
+    if (m_repository->CurrentBranch() != "main")
+    {
+        std::cout << "Cannot pull Main: current Git branch is not main.\n";
+        return false;
+    }
+
+    if (!m_repository->Run("fetch origin main").Succeeded())
+        return false;
+
+    return m_repository->Run("pull --ff-only origin main").Succeeded();
+}
+
 std::string ShelfService::EnsureShelfLink(std::string_view shelfBranch)
 {
     if (m_repository == nullptr || shelfBranch.empty())
@@ -698,7 +742,7 @@ std::string ShelfService::ShelveFilesAndEnsureShelfLink(std::string_view shelfBr
     return EnsureShelfLink(shelfBranch);
 }
 
-ShelfSubmitResult ShelfService::SubmitShelf(std::string_view shelfBranch)
+ShelfSubmitResult ShelfService::SubmitShelf(std::string_view shelfBranch, const std::vector<std::string>& files)
 {
     ShelfSubmitResult submitResult;
     if (m_repository == nullptr || shelfBranch.empty())
@@ -764,6 +808,7 @@ ShelfSubmitResult ShelfService::SubmitShelf(std::string_view shelfBranch)
         std::cout << "Submitted shelf into main: " << shelfUrl << '\n';
         submitResult.merged = true;
         submitResult.branchDeleted = DeleteShelf(shelfBranch, true);
+        RestoreFilesFromMain(files);
         return submitResult;
     }
 
@@ -774,6 +819,30 @@ ShelfSubmitResult ShelfService::SubmitShelf(std::string_view shelfBranch)
         std::cout << "Cannot submit shelf: GitHub did not report a successful merge.\n";
 
     return submitResult;
+}
+
+bool ShelfService::RestoreFilesFromMain(const std::vector<std::string>& files)
+{
+    if (m_repository == nullptr || files.empty())
+        return true;
+
+    bool succeeded = m_repository->Run("fetch origin main").Succeeded();
+    bool pulledMain = false;
+    if (m_repository->CurrentBranch() == "main")
+        pulledMain = m_repository->Run("pull --ff-only origin main").Succeeded();
+    succeeded = pulledMain && succeeded;
+
+    for (const std::string& file : files)
+    {
+        const std::string fileText = std::string(file);
+        const std::string objectName = "origin/main:" + fileText;
+        if (pulledMain && m_repository->Run("cat-file -e " + Quote(objectName), false).Succeeded())
+            succeeded = m_repository->Run("checkout origin/main -- " + Quote(fileText)).Succeeded() && succeeded;
+        else
+            succeeded = m_repository->Run("restore --staged --worktree -- " + Quote(fileText)).Succeeded() && succeeded;
+    }
+
+    return succeeded;
 }
 
 bool ShelfService::DeleteShelf(std::string_view shelfBranch, bool deleteRemote)
