@@ -1,12 +1,79 @@
 #include "ui/widgets/Widgets.h"
 
 #include "imgui.h"
+#include "imgui_internal.h"
 
+#include <algorithm>
 #include <string>
 
 namespace p4vgit::ui::widgets
 {
+static std::string ToString(std::string_view text)
+{
+    return std::string(text);
+}
+
+static ImGuiDir ToImGuiDir(DockspaceSide side)
+{
+    switch (side)
+    {
+    case DockspaceSide::Left:
+        return ImGuiDir_Left;
+    case DockspaceSide::Right:
+        return ImGuiDir_Right;
+    case DockspaceSide::Up:
+        return ImGuiDir_Up;
+    case DockspaceSide::Down:
+        return ImGuiDir_Down;
+    case DockspaceSide::Center:
+        break;
+    }
+
+    return ImGuiDir_Left;
+}
+
+static float ToDockRatio(float screenPercent)
+{
+    return std::clamp(screenPercent / 100.0f, 0.05f, 0.95f);
+}
+
+static void BuildDefaultDockspaceLayout(ImGuiID dockspaceId, const ImGuiViewport* viewport, std::span<const DockspaceDefaultLayout> defaultLayout)
+{
+    if (ImGui::DockBuilderGetNode(dockspaceId) != nullptr)
+        return;
+
+    ImGui::DockBuilderRemoveNode(dockspaceId);
+    ImGui::DockBuilderAddNode(dockspaceId, ImGuiDockNodeFlags_DockSpace);
+    ImGui::DockBuilderSetNodeSize(dockspaceId, viewport->WorkSize);
+
+    ImGuiID remainingId = dockspaceId;
+
+    for (const DockspaceDefaultLayout& placement : defaultLayout)
+    {
+        if (placement.window.empty())
+            continue;
+
+        const std::string windowName = ToString(placement.window);
+        if (placement.side == DockspaceSide::Center)
+        {
+            ImGui::DockBuilderDockWindow(windowName.c_str(), remainingId);
+            continue;
+        }
+
+        ImGuiID dockId = 0;
+        ImGui::DockBuilderSplitNode(remainingId, ToImGuiDir(placement.side), ToDockRatio(placement.screenPercent), &dockId, &remainingId);
+        ImGui::DockBuilderDockWindow(windowName.c_str(), dockId);
+    }
+
+    ImGui::DockBuilderFinish(dockspaceId);
+}
+
 void DrawDockspace()
+{
+    DrawDockspace({});
+}
+
+void DrawDockspace(std::span<const DockspaceDefaultLayout> defaultLayout)
 {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->WorkPos);
@@ -31,6 +98,9 @@ void DrawDockspace()
     ImGui::PopStyleVar(3);
 
     const ImGuiID dockspace_id = ImGui::GetID("MainDockspace");
+    if (!defaultLayout.empty())
+        BuildDefaultDockspaceLayout(dockspace_id, viewport, defaultLayout);
+
     ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
 
     ImGui::End();
@@ -38,7 +108,7 @@ void DrawDockspace()
 
 bool BeginWindow(std::string_view title)
 {
-    const std::string label(title);
+    const std::string label = ToString(title);
     return ImGui::Begin(label.c_str());
 }
 
@@ -68,6 +138,56 @@ void DrawWindowHeader(std::string_view title)
 void Text(std::string_view text)
 {
     ImGui::TextUnformatted(text.data(), text.data() + text.size());
+}
+
+bool Button(std::string_view label)
+{
+    const std::string labelText = ToString(label);
+    return ImGui::Button(labelText.c_str());
+}
+
+bool InputText(std::string_view label, char* buffer, size_t bufferSize)
+{
+    const std::string labelText = ToString(label);
+    return ImGui::InputText(labelText.c_str(), buffer, bufferSize);
+}
+
+void SameLine()
+{
+    ImGui::SameLine();
+}
+
+void Separator()
+{
+    ImGui::Separator();
+}
+
+bool BeginTreeNode(std::string_view label)
+{
+    const std::string labelText = ToString(label);
+    return ImGui::TreeNodeEx(labelText.c_str(), ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth);
+}
+
+void EndTreeNode()
+{
+    ImGui::TreePop();
+}
+
+void TreeLeaf(std::string_view label)
+{
+    const std::string labelText = ToString(label);
+    ImGui::TreeNodeEx(labelText.c_str(), ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_SpanAvailWidth);
+}
+
+void BeginScrollRegion(std::string_view id)
+{
+    const std::string labelText = ToString(id);
+    ImGui::BeginChild(labelText.c_str(), ImVec2(0.0f, 0.0f), ImGuiChildFlags_Borders);
+}
+
+void EndScrollRegion()
+{
+    ImGui::EndChild();
 }
 
 void ShowDemoWindow(bool* open)

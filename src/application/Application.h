@@ -1,5 +1,6 @@
 #pragma once
 
+#include "log/StdoutLog.h"
 #include "ui/AppUi.h"
 
 #include <memory>
@@ -29,6 +30,7 @@ private:
     std::unique_ptr<Window> m_window;
     std::unique_ptr<Renderer> m_renderer;
     std::unique_ptr<GuiLayer> m_guiLayer;
+    StdoutLog m_stdoutLog;
     AppUi m_appUi;
 };
 }
