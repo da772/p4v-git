@@ -14,7 +14,7 @@ public:
 
     std::string UserPrefix() const;
     std::string MakeShelfBranch(std::string_view shelfName) const;
-    std::vector<std::string> Shelves() const;
+    std::vector<std::string> Shelves(bool logCommand = true) const;
     bool CreateShelf(std::string_view shelfName);
     bool ShelveFiles(std::string_view shelfBranch, const std::vector<std::string>& files);
     std::string EnsurePullRequest(std::string_view shelfBranch);
@@ -23,6 +23,7 @@ public:
     bool DeleteShelf(std::string_view shelfBranch, bool deleteRemote);
 
 private:
+    std::string BuildUserPrefix(bool logCommand) const;
     static std::string SanitizeBranchPart(std::string text);
     static std::string Quote(std::string_view text);
 

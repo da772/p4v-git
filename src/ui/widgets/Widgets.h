@@ -28,6 +28,7 @@ extern bool BeginWindow(std::string_view title);
 extern void EndWindow();
 extern void DrawWindowHeader(std::string_view title);
 extern void Text(std::string_view text);
+extern bool Link(std::string_view label);
 extern bool Button(std::string_view label);
 extern bool InputText(std::string_view label, char* buffer, size_t bufferSize);
 extern bool BeginCombo(std::string_view label, std::string_view preview);

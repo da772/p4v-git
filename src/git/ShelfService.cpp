@@ -205,6 +205,52 @@ static std::string JsonStringValue(std::string_view json, std::string_view key)
     return {};
 }
 
+static std::optional<bool> JsonBooleanValue(std::string_view json, std::string_view key)
+{
+    const std::string keyPattern = "\"" + std::string(key) + "\"";
+    const size_t keyPosition = json.find(keyPattern);
+    if (keyPosition == std::string_view::npos)
+        return std::nullopt;
+
+    const size_t colonPosition = json.find(':', keyPosition + keyPattern.size());
+    if (colonPosition == std::string_view::npos)
+        return std::nullopt;
+
+    size_t valuePosition = colonPosition + 1;
+    while (valuePosition < json.size() && std::isspace(static_cast<unsigned char>(json[valuePosition])))
+        ++valuePosition;
+
+    if (json.substr(valuePosition, 4) == "true")
+        return true;
+    if (json.substr(valuePosition, 5) == "false")
+        return false;
+
+    return std::nullopt;
+}
+
+static std::optional<int> PullRequestNumberFromUrl(std::string_view pullRequestUrl)
+{
+    constexpr std::string_view marker = "/pull/";
+    const size_t markerPosition = pullRequestUrl.rfind(marker);
+    if (markerPosition == std::string_view::npos)
+        return std::nullopt;
+
+    size_t valuePosition = markerPosition + marker.size();
+    int value = 0;
+    bool hasDigit = false;
+    while (valuePosition < pullRequestUrl.size() && std::isdigit(static_cast<unsigned char>(pullRequestUrl[valuePosition])))
+    {
+        hasDigit = true;
+        value = value * 10 + (pullRequestUrl[valuePosition] - '0');
+        ++valuePosition;
+    }
+
+    if (!hasDigit)
+        return std::nullopt;
+
+    return value;
+}
+
 static std::optional<GitHubRepositoryInfo> ParseGitHubRemote(std::string remoteUrl)
 {
     remoteUrl = TrimText(remoteUrl);
@@ -304,10 +350,15 @@ void ShelfService::SetRepository(GitRepository* repository)
 
 std::string ShelfService::UserPrefix() const
 {
+    return BuildUserPrefix(true);
+}
+
+std::string ShelfService::BuildUserPrefix(bool logCommand) const
+{
     if (m_repository == nullptr)
         return "shelves/user/";
 
-    return "shelves/" + SanitizeBranchPart(m_repository->UserName()) + "/";
+    return "shelves/" + SanitizeBranchPart(m_repository->UserName(logCommand)) + "/";
 }
 
 std::string ShelfService::MakeShelfBranch(std::string_view shelfName) const
@@ -315,14 +366,14 @@ std::string ShelfService::MakeShelfBranch(std::string_view shelfName) const
     return UserPrefix() + SanitizeBranchPart(std::string(shelfName));
 }
 
-std::vector<std::string> ShelfService::Shelves() const
+std::vector<std::string> ShelfService::Shelves(bool logCommand) const
 {
     std::vector<std::string> shelves;
     if (m_repository == nullptr)
         return shelves;
 
-    const std::string prefix = UserPrefix();
-    for (const std::string& branch : m_repository->LocalBranches())
+    const std::string prefix = BuildUserPrefix(logCommand);
+    for (const std::string& branch : m_repository->LocalBranches(logCommand))
     {
         if (branch.rfind(prefix, 0) == 0)
             shelves.push_back(branch);
@@ -478,7 +529,73 @@ std::string ShelfService::SubmitShelfAsPullRequest(std::string_view shelfBranch)
     if (m_repository == nullptr || shelfBranch.empty())
         return {};
 
-    return EnsurePullRequest(shelfBranch);
+    const std::string pullRequestUrl = EnsurePullRequest(shelfBranch);
+    if (pullRequestUrl.empty())
+        return {};
+
+    const std::optional<GitHubRepositoryInfo> repositoryInfo = ParseGitHubRemote(m_repository->RemoteUrl("origin"));
+    if (!repositoryInfo.has_value())
+    {
+        std::cout << "Cannot merge pull request: origin is not a GitHub remote.\n";
+        return pullRequestUrl;
+    }
+
+    const std::string token = GitHubAuthToken(*m_repository);
+    if (token.empty())
+    {
+        std::cout << "Cannot merge pull request: sign in with Git Credential Manager or set GH_TOKEN/GITHUB_TOKEN with GitHub repo access.\n";
+        return pullRequestUrl;
+    }
+
+    const std::optional<int> pullRequestNumber = PullRequestNumberFromUrl(pullRequestUrl);
+    if (!pullRequestNumber.has_value())
+    {
+        std::cout << "Cannot merge pull request: failed to determine pull request number from " << pullRequestUrl << '\n';
+        return pullRequestUrl;
+    }
+
+    const std::filesystem::path requestDirectory = m_repository->GitDir() / "p4v-git";
+    std::error_code error;
+    std::filesystem::create_directories(requestDirectory, error);
+
+    const std::string branch = std::string(shelfBranch);
+    const std::filesystem::path requestPath = requestDirectory / "github-pr-merge.json";
+    {
+        std::ofstream requestFile(requestPath, std::ios::trunc);
+        if (!requestFile.is_open())
+        {
+            std::cout << "Cannot merge pull request: failed to write GitHub API request file.\n";
+            return pullRequestUrl;
+        }
+
+        requestFile << "{"
+                    << "\"commit_title\":\"Submit " << JsonEscape(branch) << "\","
+                    << "\"commit_message\":\"Merged by p4v-git.\","
+                    << "\"merge_method\":\"merge\""
+                    << "}";
+    }
+
+    const std::string mergeUrl = "https://api.github.com/repos/" + repositoryInfo->ApiRepositoryPath() +
+        "/pulls/" + std::to_string(*pullRequestNumber) + "/merge";
+    const std::string dataArgument = "@" + requestPath.string();
+    const GitCommandResult mergeResult = RunExternalCommand(
+        "GitHub API: merging pull request into main",
+        "curl -sS -X PUT " + GitHubApiHeaders(token) + ShellQuote(mergeUrl) + " --data-binary " + ShellQuote(dataArgument) + " 2>&1");
+
+    const std::optional<bool> merged = JsonBooleanValue(mergeResult.output, "merged");
+    if (merged.value_or(false))
+    {
+        std::cout << "Merged pull request into main: " << pullRequestUrl << '\n';
+        return pullRequestUrl;
+    }
+
+    const std::string message = JsonStringValue(mergeResult.output, "message");
+    if (!message.empty())
+        std::cout << "Cannot merge pull request: " << message << '\n';
+    else
+        std::cout << "Cannot merge pull request: GitHub did not report a successful merge.\n";
+
+    return pullRequestUrl;
 }
 
 bool ShelfService::DeleteShelf(std::string_view shelfBranch, bool deleteRemote)
