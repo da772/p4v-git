@@ -592,11 +592,8 @@ bool ShelfService::SubmitMain(const std::vector<std::string>& files, std::string
     if (m_repository == nullptr || files.empty() || summary.empty())
         return false;
 
-    if (m_repository->CurrentBranch() != "main")
-    {
-        std::cout << "Cannot submit Main: current Git branch is not main.\n";
+    if (!PullMainForSubmit())
         return false;
-    }
 
     std::string addCommand = "add -A --";
     for (const std::string& file : files)
@@ -644,6 +641,11 @@ MainSyncStatus ShelfService::RefreshMain(bool logCommand) const
 
 bool ShelfService::PullMain()
 {
+    return PullMainForSubmit();
+}
+
+bool ShelfService::PullMainForSubmit()
+{
     if (m_repository == nullptr)
         return false;
 
@@ -656,7 +658,30 @@ bool ShelfService::PullMain()
     if (!m_repository->Run("fetch origin main").Succeeded())
         return false;
 
-    return m_repository->Run("pull --ff-only origin main").Succeeded();
+    const GitCommandResult pullResult = m_repository->Run("pull --no-rebase --autostash origin main");
+    if (pullResult.Succeeded())
+        return true;
+
+    std::cout << "Pull failed. Resolve merge issues before submitting.\n";
+    OpenDefaultMergeTool();
+    return false;
+}
+
+bool ShelfService::OpenDefaultMergeTool() const
+{
+    if (m_repository == nullptr)
+        return false;
+
+    const GitCommandResult result = RunExternalCommand(
+        "Opening merge tool: VS Code",
+        "code --wait " + ShellQuote(m_repository->Root().string()) + " 2>&1",
+        true,
+        true);
+
+    if (!result.Succeeded())
+        std::cout << "Cannot open VS Code. Make sure the `code` command is available on PATH.\n";
+
+    return result.Succeeded();
 }
 
 std::string ShelfService::EnsureShelfLink(std::string_view shelfBranch)
@@ -748,6 +773,9 @@ ShelfSubmitResult ShelfService::SubmitShelf(std::string_view shelfBranch, const 
     if (m_repository == nullptr || shelfBranch.empty())
         return submitResult;
 
+    if (!PullMainForSubmit())
+        return submitResult;
+
     const std::string shelfUrl = EnsureShelfLink(shelfBranch);
     if (shelfUrl.empty())
         return submitResult;
@@ -829,7 +857,7 @@ bool ShelfService::RestoreFilesFromMain(const std::vector<std::string>& files)
     bool succeeded = m_repository->Run("fetch origin main").Succeeded();
     bool pulledMain = false;
     if (m_repository->CurrentBranch() == "main")
-        pulledMain = m_repository->Run("pull --ff-only origin main").Succeeded();
+        pulledMain = PullMainForSubmit();
     succeeded = pulledMain && succeeded;
 
     for (const std::string& file : files)
