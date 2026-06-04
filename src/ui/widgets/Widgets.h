@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cstddef>
+#include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 
 namespace p4vgit::ui::widgets
@@ -42,6 +44,8 @@ extern void TreeLeaf(std::string_view label);
 extern bool BeginContextMenuForLastItem();
 extern bool MenuItem(std::string_view label, bool enabled);
 extern void EndContextMenu();
+extern bool DragDropSource(std::string_view type, std::string_view payload, std::string_view label);
+extern std::optional<std::string> AcceptDragDropPayload(std::string_view type);
 extern void BeginScrollRegion(std::string_view id);
 extern void BeginScrollRegion(std::string_view id, bool scrollToBottom);
 extern bool IsCurrentScrollRegionAtBottom();

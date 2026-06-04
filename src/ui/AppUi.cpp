@@ -89,8 +89,6 @@ void AppUi::DrawFileChanges()
             return;
         }
 
-        DrawShelfSelector();
-
         ui::widgets::InputText("New Shelf", m_newShelfNameInput.data(), m_newShelfNameInput.size());
         if (ui::widgets::Button("Create Shelf"))
             CreateShelfFromInput();
@@ -101,43 +99,7 @@ void AppUi::DrawFileChanges()
 
         ui::widgets::Separator();
 
-        ui::widgets::Text("Checked out files");
-        if (m_workspaceState.CheckedOutFiles().empty())
-            ui::widgets::Text("No files checked out in this workspace.");
-        for (const std::string& file : m_workspaceState.CheckedOutFiles())
-            ui::widgets::Text(file);
-
-        ui::widgets::Separator();
-
-        const bool shelfSelected = HasWritableShelfSelected();
-        if (ui::widgets::Button("Shelve") && shelfSelected)
-            ShelveSelectedFiles();
-
-        ui::widgets::SameLine();
-        if (ui::widgets::Button("Submit") && shelfSelected)
-            SubmitSelectedShelf();
-
-        ui::widgets::SameLine();
-        if (ui::widgets::Button("Delete Shelf") && shelfSelected)
-            DeleteSelectedShelf();
-
-        if (!shelfSelected)
-            ui::widgets::Text("Select or create a shelf branch to enable shelf actions.");
-
-        if (!m_pullRequestLink.empty())
-        {
-            ui::widgets::Text("PR");
-            if (ui::widgets::Link(m_pullRequestLink))
-                OpenPullRequestLink();
-        }
-
-        ui::widgets::Separator();
-
-        ui::widgets::Text("Workspace status");
-        if (m_statusEntries.empty())
-            ui::widgets::Text("No Git status entries.");
-        for (const GitStatusEntry& entry : m_statusEntries)
-            ui::widgets::Text(entry.status + "  " + entry.path);
+        DrawShelfList();
     }
     ui::widgets::EndWindow();
 }
@@ -204,10 +166,12 @@ void AppUi::UseSourcePath(const std::filesystem::path& path)
     std::fill(m_sourcePathInput.begin(), m_sourcePathInput.end(), '\0');
     pathText.copy(m_sourcePathInput.data(), std::min(pathText.size(), m_sourcePathInput.size() - 1));
 
-    RefreshRepositoryData();
-
     if (!m_workspaceState.ActiveShelf().empty())
         m_selectedBranch = m_workspaceState.ActiveShelf();
+    else
+        m_selectedBranch = "main";
+
+    RefreshRepositoryData();
 
     std::cout << "Selected Git repository: " << m_sourcePath.string() << '\n';
 }
@@ -270,8 +234,16 @@ void AppUi::DrawFileEntry(const std::filesystem::directory_entry& entry)
 
     if (ui::widgets::BeginContextMenuForLastItem())
     {
-        if (ui::widgets::MenuItem("Check out", HasWritableShelfSelected()))
-            CheckOutFile(entry.path());
+        for (const std::string& shelf : m_shelves)
+        {
+            if (ui::widgets::MenuItem("Check out to " + shelf, true))
+            {
+                SelectShelf(shelf);
+                CheckOutFile(entry.path());
+            }
+        }
+        if (m_shelves.empty())
+            ui::widgets::Text("Create a shelf before checking out files.");
         ui::widgets::EndContextMenu();
     }
 }
@@ -299,8 +271,19 @@ void AppUi::RefreshRepositoryData(bool logCommands)
     m_statusEntries = m_repository->Status(logCommands);
     m_lastRefreshTime = std::chrono::steady_clock::now();
 
-    if (m_selectedBranch != "main" && std::find(m_shelves.begin(), m_shelves.end(), m_selectedBranch) == m_shelves.end())
-        m_selectedBranch = "main";
+    if (m_selectedBranch != "main")
+    {
+        const bool branchListed = std::find(m_shelves.begin(), m_shelves.end(), m_selectedBranch) != m_shelves.end();
+        if (!branchListed || !m_shelfService.IsShelfValid(m_selectedBranch, logCommands))
+        {
+            if (logCommands)
+                std::cout << "Shelf is no longer valid: " << m_selectedBranch << '\n';
+            ClearSelectedShelf();
+            return;
+        }
+    }
+
+    RefreshPullRequestLinks(logCommands);
 }
 
 void AppUi::RefreshRepositoryDataIfNeeded()
@@ -313,25 +296,169 @@ void AppUi::RefreshRepositoryDataIfNeeded()
         RefreshRepositoryData(false);
 }
 
-void AppUi::DrawShelfSelector()
+void AppUi::DrawShelfList()
 {
-    if (ui::widgets::BeginCombo("Branch / Shelf", m_selectedBranch))
+    ui::widgets::Text("Shelves");
+    if (m_shelves.empty())
     {
-        if (ui::widgets::Selectable("main", m_selectedBranch == "main"))
-            m_selectedBranch = "main";
-
-        for (const std::string& shelf : m_shelves)
-        {
-            if (ui::widgets::Selectable(shelf, shelf == m_selectedBranch))
-            {
-                m_selectedBranch = shelf;
-                m_workspaceState.SetActiveShelf(shelf);
-                m_workspaceState.Save();
-            }
-        }
-
-        ui::widgets::EndCombo();
+        ui::widgets::Text("No shelves yet.");
+        return;
     }
+
+    for (const std::string& shelf : m_shelves)
+        DrawShelfPanel(shelf);
+}
+
+void AppUi::DrawShelfPanel(const std::string& shelf)
+{
+    const bool open = ui::widgets::BeginTreeNode(shelf);
+    if (const std::optional<std::string> payload = ui::widgets::AcceptDragDropPayload("p4v-git-file"))
+        MoveCheckedOutFile(*payload, shelf);
+
+    if (!open)
+        return;
+
+    if (ui::widgets::Button("Shelve"))
+        ShelveShelf(shelf);
+
+    ui::widgets::SameLine();
+    if (ui::widgets::Button("Submit"))
+        SubmitShelf(shelf);
+
+    ui::widgets::SameLine();
+    if (ui::widgets::Button("Delete Shelf"))
+        DeleteShelf(shelf);
+
+    const std::string link = PullRequestLink(shelf);
+    if (!link.empty())
+    {
+        ui::widgets::Text("PR");
+        if (ui::widgets::Link(link))
+            OpenPullRequestLink(shelf);
+    }
+
+    ui::widgets::Separator();
+    ui::widgets::Text("Active changes");
+
+    const std::vector<std::string>& files = m_workspaceState.CheckedOutFiles(shelf);
+    if (files.empty())
+    {
+        ui::widgets::Text("No active changes assigned to this shelf.");
+    }
+    else
+    {
+        const std::vector<std::string> filesCopy = files;
+        for (const std::string& file : filesCopy)
+            DrawShelfFile(shelf, file);
+    }
+
+    ui::widgets::EndTreeNode();
+}
+
+void AppUi::DrawShelfFile(const std::string& shelf, const std::string& file)
+{
+    ui::widgets::Text(file);
+    ui::widgets::DragDropSource("p4v-git-file", shelf + "\n" + file, file);
+
+    ui::widgets::SameLine();
+    if (ui::widgets::Button("Remove##" + shelf + "/" + file))
+        RemoveCheckedOutFile(shelf, file);
+}
+
+void AppUi::SelectShelf(std::string_view shelf)
+{
+    if (shelf.empty() || shelf == "main")
+    {
+        ClearSelectedShelf();
+        return;
+    }
+
+    if (!m_shelfService.IsShelfValid(shelf, true))
+    {
+        std::cout << "Cannot open shelf because it no longer exists: " << shelf << '\n';
+        ClearSelectedShelf();
+        RefreshRepositoryData();
+        return;
+    }
+
+    m_selectedBranch = std::string(shelf);
+    m_workspaceState.SetActiveShelf(m_selectedBranch);
+    m_workspaceState.Save();
+    RefreshPullRequestLinks(true);
+}
+
+void AppUi::ClearSelectedShelf()
+{
+    m_selectedBranch = "main";
+    m_pullRequestLinks.clear();
+    m_workspaceState.SetActiveShelf({});
+    m_workspaceState.Save();
+}
+
+void AppUi::RefreshPullRequestLinks(bool logCommands)
+{
+    if (m_shelves.empty())
+    {
+        m_pullRequestLinks.clear();
+        return;
+    }
+
+    std::vector<ShelfPullRequestLink> refreshedLinks;
+    for (const std::string& shelf : m_shelves)
+    {
+        const std::string link = m_shelfService.FindPullRequest(shelf, logCommands);
+        if (!link.empty())
+            refreshedLinks.push_back({ shelf, link });
+    }
+
+    m_pullRequestLinks = std::move(refreshedLinks);
+}
+
+void AppUi::SetPullRequestLink(std::string_view shelf, std::string url)
+{
+    for (ShelfPullRequestLink& link : m_pullRequestLinks)
+    {
+        if (link.shelf == shelf)
+        {
+            link.url = std::move(url);
+            return;
+        }
+    }
+
+    if (!url.empty())
+        m_pullRequestLinks.push_back({ std::string(shelf), std::move(url) });
+}
+
+std::string AppUi::PullRequestLink(std::string_view shelf) const
+{
+    for (const ShelfPullRequestLink& link : m_pullRequestLinks)
+    {
+        if (link.shelf == shelf)
+            return link.url;
+    }
+
+    return {};
+}
+
+void AppUi::MoveCheckedOutFile(std::string_view payload, std::string_view toShelf)
+{
+    const size_t separator = payload.find('\n');
+    if (separator == std::string_view::npos)
+        return;
+
+    const std::string_view fromShelf = payload.substr(0, separator);
+    const std::string_view file = payload.substr(separator + 1);
+    m_workspaceState.MoveCheckedOutFile(fromShelf, toShelf, file);
+    m_workspaceState.Save();
+    std::cout << "Moved " << file << " from " << fromShelf << " to " << toShelf << '\n';
+}
+
+void AppUi::RemoveCheckedOutFile(const std::string& shelf, const std::string& file)
+{
+    m_shelfService.RemoveFileFromShelf(shelf, file);
+    m_workspaceState.RemoveCheckedOutFile(shelf, file);
+    m_workspaceState.Save();
+    std::cout << "Removed " << file << " from " << shelf << '\n';
 }
 
 void AppUi::CreateShelfFromInput()
@@ -346,63 +473,74 @@ void AppUi::CreateShelfFromInput()
     const std::string branch = m_shelfService.MakeShelfBranch(shelfName);
     if (m_shelfService.CreateShelf(shelfName))
     {
-        m_selectedBranch = branch;
-        m_workspaceState.SetActiveShelf(branch);
-        m_workspaceState.Save();
+        SelectShelf(branch);
         std::fill(m_newShelfNameInput.begin(), m_newShelfNameInput.end(), '\0');
         RefreshRepositoryData();
         std::cout << "Created shelf: " << branch << '\n';
     }
 }
 
-void AppUi::ShelveSelectedFiles()
+void AppUi::ShelveShelf(const std::string& shelf)
 {
-    if (!HasWritableShelfSelected())
+    if (!m_shelfService.IsShelfValid(shelf, true))
         return;
 
-    m_pullRequestLink = m_shelfService.ShelveFilesAndOpenPullRequest(m_selectedBranch, m_workspaceState.CheckedOutFiles());
-    if (!m_pullRequestLink.empty())
+    const std::string pullRequestLink = m_shelfService.ShelveFilesAndOpenPullRequest(shelf, m_workspaceState.CheckedOutFiles(shelf));
+    if (!pullRequestLink.empty())
     {
-        std::cout << "Shelved files and updated PR: " << m_pullRequestLink << '\n';
+        SetPullRequestLink(shelf, pullRequestLink);
+        std::cout << "Shelved files and updated PR: " << pullRequestLink << '\n';
         RefreshRepositoryData();
     }
 }
 
-void AppUi::SubmitSelectedShelf()
+void AppUi::SubmitShelf(const std::string& shelf)
 {
-    if (!HasWritableShelfSelected())
+    if (!m_shelfService.IsShelfValid(shelf, true))
         return;
 
-    m_pullRequestLink = m_shelfService.SubmitShelfAsPullRequest(m_selectedBranch);
-    if (!m_pullRequestLink.empty())
+    const ShelfSubmitResult submitResult = m_shelfService.SubmitShelfAsPullRequest(shelf);
+    if (!submitResult.pullRequestUrl.empty())
     {
-        std::cout << "Submit requested for PR: " << m_pullRequestLink << '\n';
+        SetPullRequestLink(shelf, submitResult.pullRequestUrl);
+        std::cout << "Submit requested for PR: " << submitResult.pullRequestUrl << '\n';
+        if (submitResult.merged)
+        {
+            if (submitResult.branchDeleted)
+                std::cout << "Submitted shelf and deleted branch: " << shelf << '\n';
+            else
+                std::cout << "Submitted shelf, but branch deletion did not fully complete: " << shelf << '\n';
+            if (m_selectedBranch == shelf)
+                ClearSelectedShelf();
+            m_workspaceState.RemoveShelf(shelf);
+            m_workspaceState.Save();
+        }
         RefreshRepositoryData();
     }
 }
 
-void AppUi::OpenPullRequestLink()
+void AppUi::OpenPullRequestLink(std::string_view shelf)
 {
-    if (m_pullRequestLink.empty())
+    const std::string pullRequestLink = PullRequestLink(shelf);
+    if (pullRequestLink.empty())
         return;
 
-    std::cout << "Open PR: " << m_pullRequestLink << '\n';
-    if (!OpenUrl(m_pullRequestLink))
+    std::cout << "Open PR: " << pullRequestLink << '\n';
+    if (!OpenUrl(pullRequestLink))
         std::cout << "Failed to open PR link in browser\n";
 }
 
-void AppUi::DeleteSelectedShelf()
+void AppUi::DeleteShelf(const std::string& shelf)
 {
-    if (!HasWritableShelfSelected())
+    if (!m_shelfService.IsShelfValid(shelf, true))
         return;
 
-    const std::string deletedShelf = m_selectedBranch;
-    if (m_shelfService.DeleteShelf(deletedShelf, true))
+    if (m_shelfService.DeleteShelf(shelf, true))
     {
-        std::cout << "Deleted shelf: " << deletedShelf << '\n';
-        m_selectedBranch = "main";
-        m_pullRequestLink.clear();
-        m_workspaceState.SetActiveShelf({});
+        std::cout << "Deleted shelf: " << shelf << '\n';
+        if (m_selectedBranch == shelf)
+            ClearSelectedShelf();
+        m_workspaceState.RemoveShelf(shelf);
         m_workspaceState.Save();
         RefreshRepositoryData();
     }
