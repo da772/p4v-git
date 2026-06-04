@@ -434,6 +434,35 @@ std::string ShelfService::FindPullRequest(std::string_view shelfBranch, bool log
     return FindGitHubPullRequestUrl(*m_repository, shelfBranch, logCommand, "all");
 }
 
+std::vector<GitStatusEntry> ShelfService::PullRequestFiles(std::string_view shelfBranch, bool logCommand) const
+{
+    std::vector<GitStatusEntry> files;
+    if (m_repository == nullptr || !IsShelfValid(shelfBranch, logCommand))
+        return files;
+
+    const std::string range = "main..." + std::string(shelfBranch);
+    std::istringstream stream(m_repository->Run("diff --name-status " + Quote(range) + " --", logCommand).output);
+    std::string line;
+    while (std::getline(stream, line))
+    {
+        line = TrimText(line);
+        if (line.empty())
+            continue;
+
+        const size_t firstTab = line.find('\t');
+        if (firstTab == std::string::npos)
+            continue;
+
+        const size_t lastTab = line.rfind('\t');
+        files.push_back({
+            line.substr(lastTab + 1),
+            line.substr(0, firstTab),
+        });
+    }
+
+    return files;
+}
+
 bool ShelfService::CreateShelf(std::string_view shelfName)
 {
     if (m_repository == nullptr)
@@ -517,7 +546,12 @@ bool ShelfService::RemoveFileFromShelf(std::string_view shelfBranch, std::string
     m_repository->Run("worktree remove --force " + Quote(worktreeRoot.string()));
 
     if (commitResult.Succeeded())
-        return addSucceeded;
+    {
+        if (!addSucceeded)
+            return false;
+
+        return m_repository->Run("push -u origin " + Quote(shelfBranch)).Succeeded();
+    }
 
     return commitResult.output.find("nothing to commit") != std::string::npos ||
            commitResult.output.find("no changes added to commit") != std::string::npos;

@@ -107,6 +107,11 @@ void DrawDockspace(std::span<const DockspaceDefaultLayout> defaultLayout)
     ImGui::End();
 }
 
+float FrameRate()
+{
+    return ImGui::GetIO().Framerate;
+}
+
 bool BeginWindow(std::string_view title)
 {
     const std::string label = ToString(title);
@@ -200,10 +205,12 @@ void Separator()
     ImGui::Separator();
 }
 
-bool BeginTreeNode(std::string_view label)
+bool BeginTreeNode(std::string_view label, bool autoOpen)
 {
     const std::string labelText = ToString(label);
-    return ImGui::TreeNodeEx(labelText.c_str(), ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth);
+    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
+    if (autoOpen) ImGui::SetNextItemOpen(autoOpen);
+    return ImGui::TreeNodeEx(labelText.c_str(), flags);
 }
 
 void EndTreeNode()
