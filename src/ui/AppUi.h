@@ -58,5 +58,6 @@ private:
     std::vector<std::string> m_shelves;
     std::vector<GitStatusEntry> m_statusEntries;
     std::chrono::steady_clock::time_point m_lastRefreshTime = {};
+    bool m_logAutoScroll = true;
 };
 }
