@@ -103,6 +103,7 @@ private:
     static ShelfJobResult RunRevertShelfFileJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelf, std::string file);
     static ShelfJobResult RunRevertActiveFileJob(const std::filesystem::path& repoRoot, std::string shelf, std::string file);
     static ShelfJobResult RunRestoreShelfFileJob(const std::filesystem::path& repoRoot, std::string shelf, std::string file);
+    static void RunOpenFileDiffJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string file);
 
     void PollAsyncOperations();
     void ApplyRepositorySnapshot(const RepositorySnapshot& snapshot);
@@ -147,10 +148,14 @@ private:
     bool IsActiveFileSelected(std::string_view shelf, std::string_view file) const;
     std::vector<std::string> SelectedFilesForShelf(std::string_view shelf, std::string_view fallbackFile) const;
     std::string BuildDragPayload(std::string_view shelf, const std::vector<std::string>& files) const;
+    std::vector<std::string> ActiveFilesForShelf(std::string_view shelf) const;
+    void ClearActiveFileSelection();
+    void PruneSelectedActiveFiles();
     void SelectActiveFile(const std::string& shelf, const std::vector<std::string>& files, size_t fileIndex);
     void MoveCheckedOutFile(std::string_view payload, std::string_view toShelf);
     void RevertCheckedOutFile(const std::string& shelf, const std::string& file);
     void RevertCheckedOutFiles(const std::string& shelf, const std::vector<std::string>& files);
+    void OpenFileDiff(const std::string& file);
     void RevertShelfFile(const std::string& shelf, const std::string& file);
     void RestoreShelfFile(const std::string& shelf, const std::string& file);
     void CreateShelfFromInput();

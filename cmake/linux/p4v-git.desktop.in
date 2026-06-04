@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=p4v-git
+Comment=A P4V-style Git desktop client
+Exec=p4v-git
+Icon=p4v-git
+Terminal=false
+Categories=Development;RevisionControl;
+StartupNotify=true
+X-P4vGit-Version=@PROJECT_VERSION@

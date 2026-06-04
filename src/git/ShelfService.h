@@ -38,6 +38,7 @@ public:
     bool RevertFileFromShelf(std::string_view shelfBranch, std::string_view file);
     bool RestoreFileFromShelfToWorkingTree(std::string_view shelfBranch, std::string_view file);
     bool UndoLocalFileChanges(std::string_view file);
+    bool OpenFileDiff(std::string_view file) const;
     bool SubmitMain(const std::vector<std::string>& files, std::string_view summary, std::string_view description);
     MainSyncStatus RefreshMain(bool logCommand = true) const;
     bool PullMain();

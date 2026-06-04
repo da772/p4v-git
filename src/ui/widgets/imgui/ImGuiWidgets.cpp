@@ -259,6 +259,14 @@ bool BeginContextMenuForCurrentWindow(std::string_view id)
     return ImGui::BeginPopupContextWindow(idText.c_str(), ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems);
 }
 
+bool DidClickCurrentWindowBlank()
+{
+    return ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) &&
+           ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+           !ImGui::IsAnyItemHovered() &&
+           !ImGui::IsAnyItemActive();
+}
+
 bool MenuItem(std::string_view label, bool enabled)
 {
     const std::string labelText = ToString(label);

@@ -1,6 +1,7 @@
 #include "platform/UrlLauncher.h"
 
-#include <cstdlib>
+#include "platform/Process.h"
+
 #include <string>
 
 namespace p4vgit
@@ -19,6 +20,6 @@ bool OpenUrl(std::string_view url)
     command = "xdg-open \"" + std::string(url) + "\"";
 #endif
 
-    return std::system(command.c_str()) == 0;
+    return StartHiddenCommand(command);
 }
 }
