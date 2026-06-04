@@ -10,6 +10,7 @@
 #include <future>
 #include <iostream>
 #include <system_error>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -243,6 +244,15 @@ ShelfJobResult AppUi::RunRestoreShelfFileJob(const std::filesystem::path& repoRo
     result.succeeded = shelfService.RestoreFileFromShelfToWorkingTree(result.shelf, result.file);
     result.addFileState = result.succeeded;
     return result;
+}
+
+void AppUi::RunOpenFileDiffJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string file)
+{
+    GitRepository repository(repoRoot);
+    ShelfService shelfService;
+    shelfService.SetRepository(&repository);
+    shelfService.SetTargetBranch(std::move(targetBranch));
+    shelfService.OpenFileDiff(file);
 }
 
 AppUi::AppUi()
@@ -667,6 +677,7 @@ void AppUi::Draw()
 {
     PollAsyncOperations();
     RefreshRepositoryDataIfNeeded();
+    PruneSelectedActiveFiles();
 
     constexpr std::array defaultLayout = {
         ui::widgets::DockspaceDefaultLayout{ "Log", ui::widgets::DockspaceSide::Down, 30.0f },
@@ -1094,6 +1105,9 @@ void AppUi::DrawShelfPanel(const std::string& shelf, bool isMainShelf)
         ui::widgets::EndContextMenu();
     }
 
+    if (!m_selectedActiveFiles.empty() && ui::widgets::DidClickCurrentWindowBlank())
+        ClearActiveFileSelection();
+
     if (!isMainShelf)
     {
         ui::widgets::Separator();
@@ -1137,6 +1151,8 @@ void AppUi::DrawShelfFile(const std::string& shelf, const std::vector<std::strin
     if (ui::widgets::BeginContextMenuForLastItem())
     {
         const std::vector<std::string> actionFiles = SelectedFilesForShelf(shelf, file);
+        if (ui::widgets::MenuItem("Diff", true))
+            OpenFileDiff(file);
         if (ui::widgets::MenuItem("Revert", true))
             RevertCheckedOutFiles(shelf, actionFiles);
         ui::widgets::EndContextMenu();
@@ -1342,6 +1358,37 @@ std::string AppUi::BuildDragPayload(std::string_view shelf, const std::vector<st
     return payload;
 }
 
+std::vector<std::string> AppUi::ActiveFilesForShelf(std::string_view shelf) const
+{
+    if (shelf == m_targetBranch)
+        return MainActiveFiles();
+
+    const std::vector<std::string>& files = m_workspaceState.CheckedOutFiles(shelf);
+    return { files.begin(), files.end() };
+}
+
+void AppUi::ClearActiveFileSelection()
+{
+    m_selectedActiveShelf.clear();
+    m_selectedActiveFiles.clear();
+    m_hasLastSelectedActiveFileIndex = false;
+    m_lastSelectedActiveFileIndex = 0;
+}
+
+void AppUi::PruneSelectedActiveFiles()
+{
+    if (m_selectedActiveShelf.empty() || m_selectedActiveFiles.empty())
+        return;
+
+    const std::vector<std::string> activeFiles = ActiveFilesForShelf(m_selectedActiveShelf);
+    m_selectedActiveFiles.erase(std::remove_if(m_selectedActiveFiles.begin(), m_selectedActiveFiles.end(), [&activeFiles](const std::string& selectedFile) {
+        return std::find(activeFiles.begin(), activeFiles.end(), selectedFile) == activeFiles.end();
+    }), m_selectedActiveFiles.end());
+
+    if (m_selectedActiveFiles.empty())
+        ClearActiveFileSelection();
+}
+
 void AppUi::SelectActiveFile(const std::string& shelf, const std::vector<std::string>& files, size_t fileIndex)
 {
     if (fileIndex >= files.size())
@@ -1450,6 +1497,18 @@ void AppUi::RevertCheckedOutFiles(const std::string& shelf, const std::vector<st
 
     for (const std::string& file : files)
         RevertCheckedOutFile(shelf, file);
+}
+
+void AppUi::OpenFileDiff(const std::string& file)
+{
+    if (!m_repository.has_value() || file.empty())
+        return;
+
+    const std::filesystem::path repoRoot = m_sourcePath;
+    const std::string targetBranch = m_targetBranch;
+    std::thread([repoRoot, targetBranch, file]() {
+        RunOpenFileDiffJob(repoRoot, targetBranch, file);
+    }).detach();
 }
 
 void AppUi::RevertShelfFile(const std::string& shelf, const std::string& file)

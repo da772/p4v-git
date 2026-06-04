@@ -2,7 +2,7 @@
 
 A cross-platform C++ desktop application aiming to provide a P4V-style interface backed by Git.
 
-Current version: `0.1.6`
+Current version: `0.1.12`
 
 The first milestone boots a GLFW window, initializes Vulkan, enables ImGui docking, uses FIFO present mode for VSync, and shows the Dear ImGui demo window.
 
@@ -54,3 +54,7 @@ Run:
 - The Vulkan swapchain is created with `VK_PRESENT_MODE_FIFO_KHR`, which is guaranteed by Vulkan and provides VSync behavior.
 - ImGui is pinned to the docking branch so later P4V-style panes can be built with dockable layouts.
 - The application version is defined in the root `CMakeLists.txt` `project(... VERSION ...)` value. Bump it for each update; CMake generates `P4vGitVersion.h` from that value.
+- App icons come from `icon.ico` on Windows and `icon.png` on Linux. macOS builds generate `p4v-git.icns` from `icon.png`; GLFW also receives embedded runtime icon pixels on platforms that support window icons.
+- MSVC builds use `/MP` so C++ compilation can run across multiple processes.
+- Git status uses NUL-delimited porcelain output with full untracked file expansion so active-change paths remain repo-relative even when they contain spaces, quotes, or live in new folders.
+- Windows builds use a GUI subsystem executable and hidden child processes so Git/curl/browser commands do not open terminal windows.

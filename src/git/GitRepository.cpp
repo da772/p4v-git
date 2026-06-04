@@ -1,17 +1,9 @@
 #include "git/GitRepository.h"
 
-#include <array>
-#include <cstdio>
+#include "platform/Process.h"
+
 #include <iostream>
 #include <sstream>
-
-#ifdef _WIN32
-#define P4VGIT_POPEN _popen
-#define P4VGIT_PCLOSE _pclose
-#else
-#define P4VGIT_POPEN popen
-#define P4VGIT_PCLOSE pclose
-#endif
 
 namespace p4vgit
 {
@@ -25,20 +17,11 @@ std::optional<GitRepository> GitRepository::Discover(const std::filesystem::path
     const std::filesystem::path probePath = std::filesystem::is_directory(selectedPath) ? selectedPath : selectedPath.parent_path();
     const std::string command = "git -C " + Quote(probePath) + " rev-parse --show-toplevel 2>&1";
 
-    std::array<char, 256> buffer = {};
-    std::string output;
-    FILE* pipe = P4VGIT_POPEN(command.c_str(), "r");
-    if (pipe == nullptr)
+    const ProcessResult result = RunHiddenCommand(command);
+    if (!result.Succeeded())
         return std::nullopt;
 
-    while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr)
-        output += buffer.data();
-
-    const int exitCode = P4VGIT_PCLOSE(pipe);
-    if (exitCode != 0)
-        return std::nullopt;
-
-    return GitRepository(Trim(output));
+    return GitRepository(Trim(result.output));
 }
 
 GitCommandResult GitRepository::Run(std::string_view arguments) const
@@ -52,21 +35,10 @@ GitCommandResult GitRepository::Run(std::string_view arguments, bool logCommand)
     if (logCommand)
         std::cout << "$ " << command << '\n';
 
+    const ProcessResult processResult = RunHiddenCommand(command);
     GitCommandResult result;
-    std::array<char, 512> buffer = {};
-    FILE* pipe = P4VGIT_POPEN(command.c_str(), "r");
-    if (pipe == nullptr)
-    {
-        result.output = "Failed to start git process";
-        if (logCommand)
-            std::cout << result.output << '\n';
-        return result;
-    }
-
-    while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr)
-        result.output += buffer.data();
-
-    result.exitCode = P4VGIT_PCLOSE(pipe);
+    result.exitCode = processResult.exitCode;
+    result.output = processResult.output;
     if (logCommand && !result.output.empty())
         std::cout << result.output;
     if (logCommand && !result.Succeeded())
@@ -121,17 +93,39 @@ std::vector<std::string> GitRepository::LocalBranches(bool logCommand) const
 std::vector<GitStatusEntry> GitRepository::Status(bool logCommand) const
 {
     std::vector<GitStatusEntry> entries;
-    std::istringstream stream(Run("status --porcelain=v1", logCommand).output);
-    std::string line;
-    while (std::getline(stream, line))
+    if (logCommand)
+        std::cout << "$ git -C " << Quote(m_root) << " status --porcelain=v1 -z -uall\n";
+
+    const std::string output = Run("status --porcelain=v1 -z -uall", false).output;
+    size_t cursor = 0;
+    while (cursor < output.size())
     {
-        if (line.size() < 4)
+        const size_t pathEnd = output.find('\0', cursor);
+        if (pathEnd == std::string::npos)
+            break;
+
+        const std::string_view entry(output.data() + cursor, pathEnd - cursor);
+        cursor = pathEnd + 1;
+        if (entry.size() < 4)
+            continue;
+
+        const std::string status = Trim(std::string(entry.substr(0, 2)));
+        const std::string path(entry.substr(3));
+        if (path.empty())
             continue;
 
         entries.push_back({
-            line.substr(3),
-            Trim(line.substr(0, 2)),
+            path,
+            status,
         });
+
+        if (status.find('R') != std::string::npos || status.find('C') != std::string::npos)
+        {
+            const size_t renameSourceEnd = output.find('\0', cursor);
+            if (renameSourceEnd == std::string::npos)
+                break;
+            cursor = renameSourceEnd + 1;
+        }
     }
 
     return entries;

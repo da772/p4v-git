@@ -1,14 +1,90 @@
 #include "platform/glfw/GlfwWindow.h"
 
 #include "imgui_impl_glfw.h"
+#include "platform/IconData.h"
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+
+#ifdef _WIN32
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
+#include <windows.h>
+#include <shellapi.h>
+
+#include "platform/windows/P4vGitWindowsResource.h"
+#endif
 
 #include <cstdio>
 
 namespace p4vgit
 {
+#ifndef __APPLE__
+void ApplyRuntimeWindowIcon(GLFWwindow* window)
+{
+    const AppIconPixels iconPixels = RuntimeWindowIcon();
+    if (iconPixels.rgba.empty())
+        return;
+
+    GLFWimage icon;
+    icon.width = iconPixels.width;
+    icon.height = iconPixels.height;
+    icon.pixels = const_cast<unsigned char*>(iconPixels.rgba.data());
+    glfwSetWindowIcon(window, 1, &icon);
+}
+#endif
+
+#ifdef _WIN32
+void ApplyWindowsWindowIcon(GLFWwindow* window)
+{
+    HWND handle = glfwGetWin32Window(window);
+    if (handle == nullptr)
+        return;
+
+    HINSTANCE instance = GetModuleHandleW(nullptr);
+    HICON bigIcon = nullptr;
+    HICON smallIcon = nullptr;
+
+    wchar_t modulePath[MAX_PATH] = {};
+    if (GetModuleFileNameW(instance, modulePath, static_cast<DWORD>(sizeof(modulePath) / sizeof(modulePath[0]))) > 0)
+        ExtractIconExW(modulePath, 0, &bigIcon, &smallIcon, 1);
+
+    if (bigIcon == nullptr)
+    {
+        bigIcon = static_cast<HICON>(LoadImageW(
+            instance,
+            MAKEINTRESOURCEW(IDI_P4VGIT),
+            IMAGE_ICON,
+            GetSystemMetrics(SM_CXICON),
+            GetSystemMetrics(SM_CYICON),
+            LR_DEFAULTCOLOR));
+    }
+
+    if (smallIcon == nullptr)
+    {
+        smallIcon = static_cast<HICON>(LoadImageW(
+            instance,
+            MAKEINTRESOURCEW(IDI_P4VGIT),
+            IMAGE_ICON,
+            GetSystemMetrics(SM_CXSMICON),
+            GetSystemMetrics(SM_CYSMICON),
+            LR_DEFAULTCOLOR));
+    }
+
+    if (bigIcon != nullptr)
+    {
+        SendMessageW(handle, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(bigIcon));
+        SetClassLongPtrW(handle, GCLP_HICON, reinterpret_cast<LONG_PTR>(bigIcon));
+    }
+    if (smallIcon != nullptr)
+    {
+        SendMessageW(handle, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(smallIcon));
+        SendMessageW(handle, WM_SETICON, 2, reinterpret_cast<LPARAM>(smallIcon));
+        SetClassLongPtrW(handle, GCLP_HICONSM, reinterpret_cast<LONG_PTR>(smallIcon));
+    }
+}
+#endif
+
 GlfwWindow::~GlfwWindow()
 {
     Shutdown();
@@ -28,6 +104,7 @@ bool GlfwWindow::Initialize(const WindowConfig& config)
     }
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
     m_contentScale = GetPrimaryMonitorScale();
     m_window = glfwCreateWindow(
@@ -42,6 +119,16 @@ bool GlfwWindow::Initialize(const WindowConfig& config)
         glfwTerminate();
         return false;
     }
+
+#ifndef __APPLE__
+    ApplyRuntimeWindowIcon(m_window);
+#endif
+
+#ifdef _WIN32
+    ApplyWindowsWindowIcon(m_window);
+#endif
+
+    glfwShowWindow(m_window);
 
     m_initialized = true;
     return true;

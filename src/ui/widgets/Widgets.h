@@ -48,6 +48,7 @@ extern void EndTreeNode();
 extern void TreeLeaf(std::string_view label);
 extern bool BeginContextMenuForLastItem();
 extern bool BeginContextMenuForCurrentWindow(std::string_view id);
+extern bool DidClickCurrentWindowBlank();
 extern bool MenuItem(std::string_view label, bool enabled);
 extern void EndContextMenu();
 extern bool IsCtrlDown();
