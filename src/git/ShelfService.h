@@ -46,6 +46,8 @@ public:
     bool DeleteShelf(std::string_view shelfBranch, bool deleteRemote);
 
 private:
+    bool PullMainForSubmit();
+    bool OpenDefaultMergeTool() const;
     bool RestoreFilesFromMain(const std::vector<std::string>& files);
     std::string BuildUserPrefix(bool logCommand) const;
     static std::string SanitizeBranchPart(std::string text);
