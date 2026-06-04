@@ -223,7 +223,27 @@ void BeginScrollRegion(std::string_view id, bool scrollToBottom)
     const std::string labelText = ToString(id);
     ImGui::BeginChild(labelText.c_str(), ImVec2(0.0f, 0.0f), ImGuiChildFlags_Borders);
     if (scrollToBottom)
-        ImGui::SetScrollHereY(1.0f);
+        ScrollCurrentRegionToBottom();
+}
+
+bool IsCurrentScrollRegionAtBottom()
+{
+    constexpr float bottomTolerance = 2.0f;
+    return ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - bottomTolerance;
+}
+
+bool DidUserScrollCurrentRegion()
+{
+    const ImGuiIO& io = ImGui::GetIO();
+    if (!ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem))
+        return false;
+
+    return io.MouseWheel != 0.0f || ImGui::IsMouseDragging(ImGuiMouseButton_Left);
+}
+
+void ScrollCurrentRegionToBottom()
+{
+    ImGui::SetScrollY(ImGui::GetScrollMaxY());
 }
 
 void EndScrollRegion()

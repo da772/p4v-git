@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <iostream>
 #include <optional>
+#include <sstream>
 #include <system_error>
 
 #ifdef _WIN32
@@ -84,7 +85,7 @@ static std::string ShellQuote(std::string_view text)
     return quoted;
 }
 
-static GitCommandResult RunExternalCommand(std::string_view label, const std::string& command)
+static GitCommandResult RunExternalCommand(std::string_view label, const std::string& command, bool logOutput = true)
 {
     std::cout << label << '\n';
 
@@ -102,7 +103,7 @@ static GitCommandResult RunExternalCommand(std::string_view label, const std::st
         result.output += buffer.data();
 
     result.exitCode = P4VGIT_PCLOSE(pipe);
-    if (!result.output.empty())
+    if (logOutput && !result.output.empty())
         std::cout << result.output << '\n';
     if (!result.Succeeded())
         std::cout << "external command failed with exit code " << result.exitCode << '\n';
@@ -233,6 +234,59 @@ static std::optional<GitHubRepositoryInfo> ParseGitHubRemote(std::string remoteU
     };
 }
 
+static std::string CredentialPassword(std::string_view credentialOutput)
+{
+    std::istringstream stream{ std::string(credentialOutput) };
+    std::string line;
+    while (std::getline(stream, line))
+    {
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+
+        constexpr std::string_view passwordPrefix = "password=";
+        if (line.rfind(passwordPrefix, 0) == 0)
+            return line.substr(passwordPrefix.size());
+    }
+
+    return {};
+}
+
+static std::string GitHubTokenFromCredentialHelper(const GitRepository& repository)
+{
+    const std::filesystem::path requestDirectory = repository.GitDir() / "p4v-git";
+    std::error_code error;
+    std::filesystem::create_directories(requestDirectory, error);
+
+    const std::filesystem::path requestPath = requestDirectory / "github-credential-input.txt";
+    {
+        std::ofstream requestFile(requestPath, std::ios::trunc);
+        if (!requestFile.is_open())
+            return {};
+
+        requestFile << "protocol=https\n"
+                    << "host=github.com\n"
+                    << "\n";
+    }
+
+    const GitCommandResult result = RunExternalCommand(
+        "Git credential helper: checking for GitHub API credentials",
+        "git -C " + ShellQuote(repository.Root().string()) + " credential fill < " + ShellQuote(requestPath.string()) + " 2>&1",
+        false);
+    if (!result.Succeeded())
+        return {};
+
+    return CredentialPassword(result.output);
+}
+
+static std::string GitHubAuthToken(const GitRepository& repository)
+{
+    std::string token = GitHubToken();
+    if (!token.empty())
+        return token;
+
+    return GitHubTokenFromCredentialHelper(repository);
+}
+
 static std::string GitHubApiHeaders(const std::string& token)
 {
     std::string headers = "-H " + ShellQuote("Accept: application/vnd.github+json") + " ";
@@ -351,7 +405,7 @@ std::string ShelfService::EnsurePullRequest(std::string_view shelfBranch)
         return {};
     }
 
-    const std::string token = GitHubToken();
+    const std::string token = GitHubAuthToken(*m_repository);
     const std::string branch = std::string(shelfBranch);
     const std::string pullsUrl = "https://api.github.com/repos/" + repositoryInfo->ApiRepositoryPath() +
         "/pulls?state=open&head=" + UrlEncode(repositoryInfo->owner + ":" + branch) + "&base=main";
@@ -365,7 +419,7 @@ std::string ShelfService::EnsurePullRequest(std::string_view shelfBranch)
 
     if (token.empty())
     {
-        std::cout << "Cannot create pull request: set GH_TOKEN or GITHUB_TOKEN with GitHub repo access.\n";
+        std::cout << "Cannot create pull request: sign in with Git Credential Manager or set GH_TOKEN/GITHUB_TOKEN with GitHub repo access.\n";
         return {};
     }
 

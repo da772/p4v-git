@@ -147,7 +147,7 @@ void AppUi::DrawLog()
     if (ui::widgets::BeginWindow("Log"))
     {
         ui::widgets::DrawWindowHeader("Log");
-        ui::widgets::BeginScrollRegion("LogScroll", true);
+        ui::widgets::BeginScrollRegion("LogScroll");
 
         if (m_stdoutLog != nullptr)
         {
@@ -155,6 +155,15 @@ void AppUi::DrawLog()
             for (const std::string& line : lines)
                 ui::widgets::Text(line);
         }
+
+        const bool userScrolledLog = ui::widgets::DidUserScrollCurrentRegion();
+        const bool logIsAtBottom = ui::widgets::IsCurrentScrollRegionAtBottom();
+        if (userScrolledLog && !logIsAtBottom)
+            m_logAutoScroll = false;
+        if (logIsAtBottom)
+            m_logAutoScroll = true;
+        if (m_logAutoScroll)
+            ui::widgets::ScrollCurrentRegionToBottom();
 
         ui::widgets::EndScrollRegion();
     }
