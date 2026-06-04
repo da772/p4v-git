@@ -34,7 +34,7 @@ public:
 
     GitCommandResult Run(std::string_view arguments) const;
     GitCommandResult Run(std::string_view arguments, bool logCommand) const;
-    std::string CurrentBranch() const;
+    std::string CurrentBranch(bool logCommand = true) const;
     std::string UserName(bool logCommand = true) const;
     std::string RemoteUrl(std::string_view remote, bool logCommand = true) const;
     std::filesystem::path GitDir(bool logCommand = true) const;

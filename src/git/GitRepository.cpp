@@ -75,9 +75,9 @@ GitCommandResult GitRepository::Run(std::string_view arguments, bool logCommand)
     return result;
 }
 
-std::string GitRepository::CurrentBranch() const
+std::string GitRepository::CurrentBranch(bool logCommand) const
 {
-    return Trim(Run("branch --show-current").output);
+    return Trim(Run("branch --show-current", logCommand).output);
 }
 
 std::string GitRepository::UserName(bool logCommand) const
