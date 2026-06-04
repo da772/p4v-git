@@ -21,6 +21,8 @@ public:
 
     const std::string& ActiveShelf() const { return m_activeShelf; }
     void SetActiveShelf(std::string shelf);
+    const std::string& TargetBranch() const { return m_targetBranch; }
+    void SetTargetBranch(std::string branch);
 
     const std::vector<ShelfWorkspaceFiles>& Shelves() const { return m_shelfFiles; }
     const std::vector<std::string>& CheckedOutFiles() const;
@@ -46,6 +48,7 @@ private:
 
     std::filesystem::path m_statePath;
     std::string m_activeShelf;
+    std::string m_targetBranch = "main";
     std::vector<ShelfWorkspaceFiles> m_shelfFiles;
 };
 }

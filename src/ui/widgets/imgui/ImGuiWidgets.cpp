@@ -253,6 +253,12 @@ bool BeginContextMenuForLastItem()
     return ImGui::BeginPopupContextItem();
 }
 
+bool BeginContextMenuForCurrentWindow(std::string_view id)
+{
+    const std::string idText = ToString(id);
+    return ImGui::BeginPopupContextWindow(idText.c_str(), ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems);
+}
+
 bool MenuItem(std::string_view label, bool enabled)
 {
     const std::string labelText = ToString(label);
@@ -284,6 +290,16 @@ void EndModal()
 void CloseCurrentPopup()
 {
     ImGui::CloseCurrentPopup();
+}
+
+bool IsCtrlDown()
+{
+    return ImGui::GetIO().KeyCtrl;
+}
+
+bool IsShiftDown()
+{
+    return ImGui::GetIO().KeyShift;
 }
 
 bool DragDropSource(std::string_view type, std::string_view payload, std::string_view label)
