@@ -2,7 +2,7 @@
 
 A cross-platform C++ desktop application aiming to provide a P4V-style interface backed by Git.
 
-Current version: `0.1.4`
+Current version: `0.1.5`
 
 The first milestone boots a GLFW window, initializes Vulkan, enables ImGui docking, uses FIFO present mode for VSync, and shows the Dear ImGui demo window.
 
