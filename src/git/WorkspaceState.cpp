@@ -10,6 +10,7 @@ bool WorkspaceState::Load(const std::filesystem::path& repoRoot)
 {
     m_statePath = repoRoot / ".git" / "p4v-git" / "state.json";
     m_activeShelf.clear();
+    m_targetBranch = "main";
     m_shelfFiles.clear();
 
     std::ifstream file(m_statePath);
@@ -21,6 +22,9 @@ bool WorkspaceState::Load(const std::filesystem::path& repoRoot)
     const std::string json = buffer.str();
 
     m_activeShelf = ReadJsonString(json, "activeShelf");
+    m_targetBranch = ReadJsonString(json, "targetBranch");
+    if (m_targetBranch.empty())
+        m_targetBranch = "main";
     m_shelfFiles = ReadShelfFiles(json);
     if (m_shelfFiles.empty())
     {
@@ -41,6 +45,7 @@ bool WorkspaceState::Save() const
 
     file << "{\n";
     file << "  \"activeShelf\": \"" << Escape(m_activeShelf) << "\",\n";
+    file << "  \"targetBranch\": \"" << Escape(m_targetBranch) << "\",\n";
     file << "  \"shelves\": [\n";
     for (size_t shelfIndex = 0; shelfIndex < m_shelfFiles.size(); ++shelfIndex)
     {
@@ -66,6 +71,11 @@ bool WorkspaceState::Save() const
 void WorkspaceState::SetActiveShelf(std::string shelf)
 {
     m_activeShelf = std::move(shelf);
+}
+
+void WorkspaceState::SetTargetBranch(std::string branch)
+{
+    m_targetBranch = branch.empty() ? "main" : std::move(branch);
 }
 
 const std::vector<std::string>& WorkspaceState::CheckedOutFiles() const

@@ -143,6 +143,11 @@ bool GitRepository::BranchExists(std::string_view branch, bool logCommand) const
     return Run("show-ref --verify --quiet " + Quote(std::string_view(ref)), logCommand).Succeeded();
 }
 
+bool GitRepository::CheckoutBranch(std::string_view branch)
+{
+    return Run("checkout " + Quote(branch)).Succeeded();
+}
+
 std::string GitRepository::Trim(std::string text)
 {
     while (!text.empty() && (text.back() == '\n' || text.back() == '\r' || text.back() == ' ' || text.back() == '\t'))

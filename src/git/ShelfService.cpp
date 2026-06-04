@@ -11,6 +11,7 @@
 #include <optional>
 #include <sstream>
 #include <system_error>
+#include <utility>
 
 #ifdef _WIN32
 #define P4VGIT_POPEN _popen
@@ -346,7 +347,7 @@ static std::string GitHubApiHeaders(const std::string& token)
     return headers;
 }
 
-static std::string FindGitHubShelfUrl(const GitRepository& repository, std::string_view shelfBranch, bool logCommand, std::string_view state)
+static std::string FindGitHubShelfUrl(const GitRepository& repository, std::string_view shelfBranch, std::string_view baseBranch, bool logCommand, std::string_view state)
 {
     if (shelfBranch.empty())
         return {};
@@ -364,7 +365,7 @@ static std::string FindGitHubShelfUrl(const GitRepository& repository, std::stri
     const std::string shelvesUrl = "https://api.github.com/repos/" + repositoryInfo->ApiRepositoryPath() +
         "/pulls?state=" + std::string(state) +
         "&head=" + UrlEncode(repositoryInfo->owner + ":" + branch) +
-        "&base=main&sort=updated&direction=desc";
+        "&base=" + UrlEncode(baseBranch) + "&sort=updated&direction=desc";
 
     const GitCommandResult result = RunExternalCommand(
         "GitHub API: checking for an existing shelf",
@@ -380,6 +381,11 @@ void ShelfService::SetRepository(GitRepository* repository)
     m_repository = repository;
 }
 
+void ShelfService::SetTargetBranch(std::string branch)
+{
+    m_targetBranch = branch.empty() ? "main" : std::move(branch);
+}
+
 std::string ShelfService::UserPrefix() const
 {
     return BuildUserPrefix(true);
@@ -388,9 +394,9 @@ std::string ShelfService::UserPrefix() const
 std::string ShelfService::BuildUserPrefix(bool logCommand) const
 {
     if (m_repository == nullptr)
-        return "shelves/user/";
+        return "shelves/user/" + SanitizeBranchPart(TargetBranch()) + "/";
 
-    return "shelves/" + SanitizeBranchPart(m_repository->UserName(logCommand)) + "/";
+    return "shelves/" + SanitizeBranchPart(m_repository->UserName(logCommand)) + "/" + SanitizeBranchPart(TargetBranch()) + "/";
 }
 
 std::string ShelfService::MakeShelfBranch(std::string_view shelfName) const
@@ -416,7 +422,7 @@ std::vector<std::string> ShelfService::Shelves(bool logCommand) const
 
 bool ShelfService::IsShelfValid(std::string_view shelfBranch, bool logCommand) const
 {
-    if (m_repository == nullptr || shelfBranch.empty() || shelfBranch == "main")
+    if (m_repository == nullptr || shelfBranch.empty() || shelfBranch == TargetBranch())
         return false;
 
     const std::string prefix = BuildUserPrefix(logCommand);
@@ -431,7 +437,7 @@ std::string ShelfService::FindShelfLink(std::string_view shelfBranch, bool logCo
     if (m_repository == nullptr || !IsShelfValid(shelfBranch, logCommand))
         return {};
 
-    return FindGitHubShelfUrl(*m_repository, shelfBranch, logCommand, "all");
+    return FindGitHubShelfUrl(*m_repository, shelfBranch, TargetBranch(), logCommand, "all");
 }
 
 std::vector<GitStatusEntry> ShelfService::ShelfFiles(std::string_view shelfBranch, bool logCommand) const
@@ -440,7 +446,7 @@ std::vector<GitStatusEntry> ShelfService::ShelfFiles(std::string_view shelfBranc
     if (m_repository == nullptr || !IsShelfValid(shelfBranch, logCommand))
         return files;
 
-    const std::string range = "main..." + std::string(shelfBranch);
+    const std::string range = TargetBranch() + "..." + std::string(shelfBranch);
     std::istringstream stream(m_repository->Run("diff --name-status " + Quote(range) + " --", logCommand).output);
     std::string line;
     while (std::getline(stream, line))
@@ -472,7 +478,7 @@ bool ShelfService::CreateShelf(std::string_view shelfName)
     if (m_repository->BranchExists(branch))
         return true;
 
-    return m_repository->Run("branch " + Quote(branch)).Succeeded();
+    return m_repository->Run("branch " + Quote(branch) + " " + Quote(TargetBranch())).Succeeded();
 }
 
 bool ShelfService::ShelveFiles(std::string_view shelfBranch, const std::vector<std::string>& files)
@@ -537,7 +543,7 @@ bool ShelfService::RevertFileFromShelf(std::string_view shelfBranch, std::string
 
     GitRepository shelfWorktree(worktreeRoot);
     const std::string fileText = std::string(file);
-    const bool restoredFromMain = shelfWorktree.Run("checkout main -- " + Quote(fileText)).Succeeded();
+    const bool restoredFromMain = shelfWorktree.Run("checkout " + Quote(TargetBranch()) + " -- " + Quote(fileText)).Succeeded();
     if (!restoredFromMain)
         shelfWorktree.Run("rm --ignore-unmatch -- " + Quote(fileText));
 
@@ -609,7 +615,7 @@ bool ShelfService::SubmitMain(const std::vector<std::string>& files, std::string
     if (!m_repository->Run(commitCommand).Succeeded())
         return false;
 
-    return m_repository->Run("push origin main").Succeeded();
+    return m_repository->Run("push origin " + Quote(TargetBranch())).Succeeded();
 }
 
 MainSyncStatus ShelfService::RefreshMain(bool logCommand) const
@@ -618,12 +624,13 @@ MainSyncStatus ShelfService::RefreshMain(bool logCommand) const
     if (m_repository == nullptr)
         return status;
 
-    status.fetched = m_repository->Run("fetch origin main", logCommand).Succeeded();
-    status.remoteAvailable = m_repository->Run("rev-parse --verify --quiet origin/main", logCommand).Succeeded();
+    const std::string remoteRef = "origin/" + TargetBranch();
+    status.fetched = m_repository->Run("fetch origin " + Quote(TargetBranch()), logCommand).Succeeded();
+    status.remoteAvailable = m_repository->Run("rev-parse --verify --quiet " + Quote(remoteRef), logCommand).Succeeded();
     if (!status.remoteAvailable)
         return status;
 
-    const std::string countText = TrimText(m_repository->Run("rev-list --count main..origin/main", logCommand).output);
+    const std::string countText = TrimText(m_repository->Run("rev-list --count " + Quote(TargetBranch() + ".." + remoteRef), logCommand).output);
     if (!countText.empty())
     {
         try
@@ -649,16 +656,16 @@ bool ShelfService::PullMainForSubmit()
     if (m_repository == nullptr)
         return false;
 
-    if (m_repository->CurrentBranch() != "main")
+    if (m_repository->CurrentBranch() != TargetBranch())
     {
-        std::cout << "Cannot pull Main: current Git branch is not main.\n";
+        std::cout << "Cannot pull: current Git branch is not " << TargetBranch() << ".\n";
         return false;
     }
 
-    if (!m_repository->Run("fetch origin main").Succeeded())
+    if (!m_repository->Run("fetch origin " + Quote(TargetBranch())).Succeeded())
         return false;
 
-    const GitCommandResult pullResult = m_repository->Run("pull --no-rebase --autostash origin main");
+    const GitCommandResult pullResult = m_repository->Run("pull --no-rebase --autostash origin " + Quote(TargetBranch()));
     if (pullResult.Succeeded())
         return true;
 
@@ -702,7 +709,7 @@ std::string ShelfService::EnsureShelfLink(std::string_view shelfBranch)
     const std::string token = GitHubAuthToken(*m_repository);
     const std::string branch = std::string(shelfBranch);
     const std::string shelvesUrl = "https://api.github.com/repos/" + repositoryInfo->ApiRepositoryPath() +
-        "/pulls?state=open&head=" + UrlEncode(repositoryInfo->owner + ":" + branch) + "&base=main";
+        "/pulls?state=open&head=" + UrlEncode(repositoryInfo->owner + ":" + branch) + "&base=" + UrlEncode(TargetBranch());
 
     const GitCommandResult existingResult = RunExternalCommand(
         "GitHub API: checking for an existing shelf",
@@ -735,7 +742,7 @@ std::string ShelfService::EnsureShelfLink(std::string_view shelfBranch)
         requestFile << "{"
                     << "\"title\":\"" << JsonEscape(title) << "\","
                     << "\"head\":\"" << JsonEscape(branch) << "\","
-                    << "\"base\":\"main\","
+                    << "\"base\":\"" << JsonEscape(TargetBranch()) << "\","
                     << "\"body\":\"" << JsonEscape(body) << "\""
                     << "}";
     }
@@ -827,13 +834,13 @@ ShelfSubmitResult ShelfService::SubmitShelf(std::string_view shelfBranch, const 
         "/pulls/" + std::to_string(*shelfNumber) + "/merge";
     const std::string dataArgument = "@" + requestPath.string();
     const GitCommandResult mergeResult = RunExternalCommand(
-        "GitHub API: submitting shelf into main",
+        "GitHub API: submitting shelf into " + TargetBranch(),
         "curl -sS -X PUT " + GitHubApiHeaders(token) + ShellQuote(mergeUrl) + " --data-binary " + ShellQuote(dataArgument) + " 2>&1");
 
     const std::optional<bool> merged = JsonBooleanValue(mergeResult.output, "merged");
     if (merged.value_or(false))
     {
-        std::cout << "Submitted shelf into main: " << shelfUrl << '\n';
+        std::cout << "Submitted shelf into " << TargetBranch() << ": " << shelfUrl << '\n';
         submitResult.merged = true;
         submitResult.branchDeleted = DeleteShelf(shelfBranch, true);
         RestoreFilesFromMain(files);
@@ -854,18 +861,18 @@ bool ShelfService::RestoreFilesFromMain(const std::vector<std::string>& files)
     if (m_repository == nullptr || files.empty())
         return true;
 
-    bool succeeded = m_repository->Run("fetch origin main").Succeeded();
+    bool succeeded = m_repository->Run("fetch origin " + Quote(TargetBranch())).Succeeded();
     bool pulledMain = false;
-    if (m_repository->CurrentBranch() == "main")
+    if (m_repository->CurrentBranch() == TargetBranch())
         pulledMain = PullMainForSubmit();
     succeeded = pulledMain && succeeded;
 
     for (const std::string& file : files)
     {
         const std::string fileText = std::string(file);
-        const std::string objectName = "origin/main:" + fileText;
+        const std::string objectName = "origin/" + TargetBranch() + ":" + fileText;
         if (pulledMain && m_repository->Run("cat-file -e " + Quote(objectName), false).Succeeded())
-            succeeded = m_repository->Run("checkout origin/main -- " + Quote(fileText)).Succeeded() && succeeded;
+            succeeded = m_repository->Run("checkout " + Quote("origin/" + TargetBranch()) + " -- " + Quote(fileText)).Succeeded() && succeeded;
         else
             succeeded = m_repository->Run("restore --staged --worktree -- " + Quote(fileText)).Succeeded() && succeeded;
     }

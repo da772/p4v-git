@@ -41,6 +41,7 @@ public:
     std::vector<std::string> LocalBranches(bool logCommand = true) const;
     std::vector<GitStatusEntry> Status(bool logCommand = true) const;
     bool BranchExists(std::string_view branch, bool logCommand = true) const;
+    bool CheckoutBranch(std::string_view branch);
 
 private:
     static std::string Trim(std::string text);

@@ -25,6 +25,7 @@ class ShelfService
 {
 public:
     void SetRepository(GitRepository* repository);
+    void SetTargetBranch(std::string branch);
 
     std::string UserPrefix() const;
     std::string MakeShelfBranch(std::string_view shelfName) const;
@@ -46,6 +47,7 @@ public:
     bool DeleteShelf(std::string_view shelfBranch, bool deleteRemote);
 
 private:
+    const std::string& TargetBranch() const { return m_targetBranch; }
     bool PullMainForSubmit();
     bool OpenDefaultMergeTool() const;
     bool RestoreFilesFromMain(const std::vector<std::string>& files);
@@ -54,5 +56,6 @@ private:
     static std::string Quote(std::string_view text);
 
     GitRepository* m_repository = nullptr;
+    std::string m_targetBranch = "main";
 };
 }
