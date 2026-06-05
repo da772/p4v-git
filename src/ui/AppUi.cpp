@@ -1240,10 +1240,7 @@ void AppUi::DrawShelfPanel(const std::string& shelf, bool isMainShelf)
         {
             if (ui::widgets::MenuItem("Submit", !shelfBusy))
             {
-                if (!m_workspaceState.CheckedOutFiles(shelf).empty())
-                    OpenShelvePopup(shelf, true);
-                else
-                    SubmitShelf(shelf);
+                SubmitShelf(shelf);
             }
 
             if (ui::widgets::MenuItem("Shelve", !shelfBusy))
