@@ -2,6 +2,7 @@
 
 #include "platform/Process.h"
 
+#include <algorithm>
 #include <iostream>
 #include <sstream>
 
@@ -78,15 +79,43 @@ std::filesystem::path GitRepository::GitDir(bool logCommand) const
 std::vector<std::string> GitRepository::LocalBranches(bool logCommand) const
 {
     std::vector<std::string> branches;
-    std::istringstream stream(Run("for-each-ref --format=%(refname:short) refs/heads", logCommand).output);
+    const auto addBranch = [&branches](std::string branch) {
+        if (branch.empty() || branch == "origin")
+            return;
+
+        if (std::find(branches.begin(), branches.end(), branch) != branches.end())
+            return;
+
+        branches.push_back(std::move(branch));
+    };
+
+    if (Run("remote get-url origin", false).Succeeded())
+        Run("fetch origin --prune", logCommand);
+
+    std::istringstream stream(Run("show-ref", logCommand).output);
     std::string line;
     while (std::getline(stream, line))
     {
-        line = Trim(line);
-        if (!line.empty())
-            branches.push_back(line);
+        line = Trim(std::move(line));
+        const size_t refPosition = line.find(' ');
+        if (refPosition == std::string::npos)
+            continue;
+
+        const std::string ref = line.substr(refPosition + 1);
+        constexpr std::string_view localPrefix = "refs/heads/";
+        constexpr std::string_view originPrefix = "refs/remotes/origin/";
+
+        if (ref.rfind(localPrefix, 0) == 0)
+            addBranch(ref.substr(localPrefix.size()));
+        else if (ref.rfind(originPrefix, 0) == 0)
+        {
+            const std::string branch = ref.substr(originPrefix.size());
+            if (branch != "HEAD")
+                addBranch(branch);
+        }
     }
 
+    std::sort(branches.begin(), branches.end());
     return branches;
 }
 
@@ -139,6 +168,17 @@ bool GitRepository::BranchExists(std::string_view branch, bool logCommand) const
 
 bool GitRepository::CheckoutBranch(std::string_view branch)
 {
+    if (BranchExists(branch, false))
+        return Run("checkout " + Quote(branch)).Succeeded();
+
+    const std::string branchText(branch);
+    const std::string remoteRef = "refs/remotes/origin/" + branchText;
+    if (Run("show-ref --verify --quiet " + Quote(std::string_view(remoteRef)), false).Succeeded())
+    {
+        const std::string remoteBranch = "origin/" + branchText;
+        return Run("checkout --track -b " + Quote(std::string_view(branchText)) + " " + Quote(std::string_view(remoteBranch))).Succeeded();
+    }
+
     return Run("checkout " + Quote(branch)).Succeeded();
 }
 
