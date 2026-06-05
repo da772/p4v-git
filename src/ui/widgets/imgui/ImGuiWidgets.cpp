@@ -4,6 +4,7 @@
 #include "imgui_internal.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <optional>
 #include <string>
 
@@ -38,14 +39,40 @@ static float ToDockRatio(float screenPercent)
     return std::clamp(screenPercent / 100.0f, 0.05f, 0.95f);
 }
 
-static void BuildDefaultDockspaceLayout(ImGuiID dockspaceId, const ImGuiViewport* viewport, std::span<const DockspaceDefaultLayout> defaultLayout)
+static ImU32 Color(uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha = 255)
+{
+    return IM_COL32(red, green, blue, alpha);
+}
+
+static float UiScale()
+{
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    if (viewport == nullptr)
+        return 1.0f;
+
+    return std::max(1.0f, viewport->DpiScale);
+}
+
+static bool DrawTitleBarButton(std::string_view id, ImU32 color, ImU32 hoverColor, float radius)
+{
+    const std::string label = ToString(id);
+    const ImVec2 cursor = ImGui::GetCursorScreenPos();
+    const ImVec2 center = ImVec2(cursor.x + radius, cursor.y + radius);
+    ImGui::InvisibleButton(label.c_str(), ImVec2(radius * 2.0f, radius * 2.0f));
+    const bool hovered = ImGui::IsItemHovered();
+    const bool clicked = ImGui::IsItemClicked(ImGuiMouseButton_Left);
+    ImGui::GetWindowDrawList()->AddCircleFilled(center, radius, hovered ? hoverColor : color, 22);
+    return clicked;
+}
+
+static void BuildDefaultDockspaceLayout(ImGuiID dockspaceId, ImVec2 dockspaceSize, std::span<const DockspaceDefaultLayout> defaultLayout)
 {
     if (ImGui::DockBuilderGetNode(dockspaceId) != nullptr)
         return;
 
     ImGui::DockBuilderRemoveNode(dockspaceId);
     ImGui::DockBuilderAddNode(dockspaceId, ImGuiDockNodeFlags_DockSpace);
-    ImGui::DockBuilderSetNodeSize(dockspaceId, viewport->WorkSize);
+    ImGui::DockBuilderSetNodeSize(dockspaceId, dockspaceSize);
 
     ImGuiID remainingId = dockspaceId;
 
@@ -76,9 +103,15 @@ void DrawDockspace()
 
 void DrawDockspace(std::span<const DockspaceDefaultLayout> defaultLayout)
 {
+    DrawDockspace(defaultLayout, 0.0f);
+}
+
+void DrawDockspace(std::span<const DockspaceDefaultLayout> defaultLayout, float topInset)
+{
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(viewport->WorkPos);
-    ImGui::SetNextWindowSize(viewport->WorkSize);
+    const float clampedTopInset = std::clamp(topInset, 0.0f, viewport->WorkSize.y);
+    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x, viewport->WorkPos.y + clampedTopInset));
+    ImGui::SetNextWindowSize(ImVec2(viewport->WorkSize.x, viewport->WorkSize.y - clampedTopInset));
     ImGui::SetNextWindowViewport(viewport->ID);
 
     ImGuiWindowFlags window_flags =
@@ -98,13 +131,88 @@ void DrawDockspace(std::span<const DockspaceDefaultLayout> defaultLayout)
     ImGui::Begin("MainDockspaceHost", nullptr, window_flags);
     ImGui::PopStyleVar(3);
 
-    const ImGuiID dockspace_id = ImGui::GetID("MainDockspace");
+    const ImGuiID dockspace_id = ImGui::GetID("MainDockspaceV2");
     if (!defaultLayout.empty())
-        BuildDefaultDockspaceLayout(dockspace_id, viewport, defaultLayout);
+        BuildDefaultDockspaceLayout(dockspace_id, ImGui::GetContentRegionAvail(), defaultLayout);
 
     ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
 
     ImGui::End();
+}
+
+float TitleBarHeight()
+{
+    return 34.0f * UiScale();
+}
+
+TitleBarResult DrawTitleBar(std::string_view title, std::string_view subtitle, bool maximized)
+{
+    TitleBarResult result;
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    const float height = TitleBarHeight();
+    const float scale = UiScale();
+    const float edgePadding = 10.0f * scale;
+    const float buttonRadius = 5.5f * scale;
+    const float buttonGap = 7.0f * scale;
+
+    ImGui::SetNextWindowPos(viewport->WorkPos);
+    ImGui::SetNextWindowSize(ImVec2(viewport->WorkSize.x, height));
+    ImGui::SetNextWindowViewport(viewport->ID);
+
+    ImGuiWindowFlags flags =
+        ImGuiWindowFlags_NoDocking |
+        ImGuiWindowFlags_NoTitleBar |
+        ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_NoSavedSettings |
+        ImGuiWindowFlags_NoBringToFrontOnFocus |
+        ImGuiWindowFlags_NoNavFocus;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.075f, 0.086f, 0.095f, 1.0f));
+    ImGui::Begin("AppTitleBar", nullptr, flags);
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(3);
+
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    const ImVec2 min = ImGui::GetWindowPos();
+    const ImVec2 max = ImVec2(min.x + ImGui::GetWindowWidth(), min.y + height);
+    drawList->AddRectFilled(min, max, Color(19, 22, 25));
+    drawList->AddLine(ImVec2(min.x, max.y - 1.0f), ImVec2(max.x, max.y - 1.0f), Color(54, 62, 67));
+
+    const float controlWidth = buttonRadius * 6.0f + buttonGap * 2.0f;
+    const float controlX = max.x - edgePadding - controlWidth;
+    const float controlY = min.y + (height - buttonRadius * 2.0f) * 0.5f;
+    ImGui::SetCursorScreenPos(ImVec2(controlX, controlY));
+    result.minimize = DrawTitleBarButton("##minimize", Color(238, 190, 86), Color(255, 210, 110), buttonRadius);
+    ImGui::SameLine(0.0f, buttonGap);
+    result.maximize = DrawTitleBarButton("##maximize", maximized ? Color(96, 168, 130) : Color(99, 199, 122), Color(126, 222, 150), buttonRadius);
+    ImGui::SameLine(0.0f, buttonGap);
+    result.close = DrawTitleBarButton("##close", Color(238, 95, 88), Color(255, 120, 112), buttonRadius);
+
+    const std::string titleText = ToString(title);
+    const std::string subtitleText = ToString(subtitle);
+    const std::string text = subtitleText.empty() ? titleText : titleText + "  |  " + subtitleText;
+    const ImVec2 textSize = ImGui::CalcTextSize(text.c_str());
+    ImGui::SetCursorScreenPos(ImVec2(min.x + (ImGui::GetWindowWidth() - textSize.x) * 0.5f, min.y + (height - textSize.y) * 0.5f + 1.0f * scale));
+    ImGui::TextUnformatted(text.c_str());
+
+    ImGui::SetCursorScreenPos(ImVec2(min.x, min.y));
+    ImGui::InvisibleButton("##titlebar-drag", ImVec2(std::max(0.0f, controlX - min.x - edgePadding), height));
+    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+    {
+        result.maximize = true;
+    }
+    else
+    {
+        result.drag = ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 1.0f * scale);
+    }
+
+    ImGui::End();
+    return result;
 }
 
 float FrameRate()
