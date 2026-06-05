@@ -17,6 +17,7 @@
 namespace p4vgit
 {
 class StdoutLog;
+class Window;
 
 struct ShelfLinkEntry
 {
@@ -88,6 +89,7 @@ public:
     AppUi();
 
     void SetStdoutLog(const StdoutLog* stdoutLog);
+    void SetWindow(Window* window);
     void OnWindowFocusGained();
     void Draw();
 
@@ -95,7 +97,7 @@ private:
     static RepositorySnapshot LoadRepositorySnapshot(const std::filesystem::path& selectedPath, bool discoverRepository, bool logCommands, uint64_t refreshGeneration);
     static ShelfJobResult RunCreateShelfJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelfName, std::vector<std::string> files);
     static ShelfJobResult RunSelectTargetBranchJob(const std::filesystem::path& repoRoot, std::string targetBranch);
-    static ShelfJobResult RunShelveShelfJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelf, std::vector<std::string> files);
+    static ShelfJobResult RunShelveShelfJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelf, std::vector<std::string> files, std::string summary, std::string description);
     static ShelfJobResult RunSubmitShelfJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelf, std::vector<std::string> files);
     static ShelfJobResult RunSubmitMainJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::vector<std::string> files, std::string summary, std::string description);
     static ShelfJobResult RunPullMainJob(const std::filesystem::path& repoRoot, std::string targetBranch);
@@ -117,8 +119,11 @@ private:
     void ClearPendingConfirmation();
     void OpenMainSubmitPopup();
     void DrawMainSubmitPopup();
+    void OpenShelvePopup(std::string shelf);
+    void DrawShelvePopup();
     void OpenCreateShelfPopup();
     void DrawCreateShelfPopup();
+    void DrawAppTitleBar();
     void DrawWorkspaceExplorer();
     void DrawFileChanges();
     void DrawLog();
@@ -171,10 +176,13 @@ private:
     static std::string PathLabel(const std::filesystem::path& path);
 
     const StdoutLog* m_stdoutLog = nullptr;
+    Window* m_window = nullptr;
     std::array<char, 1024> m_sourcePathInput = {};
     std::array<char, 128> m_newShelfNameInput = {};
     std::array<char, 256> m_mainSubmitSummaryInput = {};
     std::array<char, 2048> m_mainSubmitDescriptionInput = {};
+    std::array<char, 256> m_shelveSummaryInput = {};
+    std::array<char, 2048> m_shelveDescriptionInput = {};
     std::filesystem::path m_sourcePath;
     bool m_hasSourcePath = false;
     std::string m_sourcePathError;
@@ -203,8 +211,11 @@ private:
     std::string m_confirmationFile;
     bool m_openConfirmationPopup = false;
     bool m_openMainSubmitPopup = false;
+    bool m_openShelvePopup = false;
     bool m_openCreateShelfPopup = false;
     std::string m_mainSubmitError;
+    std::string m_shelveError;
+    std::string m_shelveShelf;
     std::string m_createShelfError;
     std::string m_selectedActiveShelf;
     std::vector<std::string> m_selectedActiveFiles;

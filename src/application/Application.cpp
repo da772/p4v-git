@@ -38,6 +38,7 @@ bool Application::Initialize()
     m_window = CreateWindow(WindowBackend::Glfw);
     if (m_window == nullptr || !m_window->Initialize({ P4VGIT_DISPLAY_NAME, 1280, 800 }))
         return false;
+    m_appUi.SetWindow(m_window.get());
     m_wasWindowFocused = m_window->IsFocused();
 
     m_renderer = CreateRenderer(RendererApi::Vulkan);

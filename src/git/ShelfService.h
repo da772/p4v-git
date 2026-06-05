@@ -34,7 +34,7 @@ public:
     std::string FindShelfLink(std::string_view shelfBranch, bool logCommand = true) const;
     std::vector<GitStatusEntry> ShelfFiles(std::string_view shelfBranch, bool logCommand = true) const;
     bool CreateShelf(std::string_view shelfName);
-    bool ShelveFiles(std::string_view shelfBranch, const std::vector<std::string>& files);
+    bool ShelveFiles(std::string_view shelfBranch, const std::vector<std::string>& files, std::string_view summary, std::string_view description);
     bool RevertFileFromShelf(std::string_view shelfBranch, std::string_view file);
     bool RestoreFileFromShelfToWorkingTree(std::string_view shelfBranch, std::string_view file);
     bool UndoLocalFileChanges(std::string_view file);
@@ -43,7 +43,7 @@ public:
     MainSyncStatus RefreshMain(bool logCommand = true) const;
     bool PullMain();
     std::string EnsureShelfLink(std::string_view shelfBranch);
-    std::string ShelveFilesAndEnsureShelfLink(std::string_view shelfBranch, const std::vector<std::string>& files);
+    std::string ShelveFilesAndEnsureShelfLink(std::string_view shelfBranch, const std::vector<std::string>& files, std::string_view summary, std::string_view description);
     ShelfSubmitResult SubmitShelf(std::string_view shelfBranch, const std::vector<std::string>& files);
     bool DeleteShelf(std::string_view shelfBranch, bool deleteRemote);
 

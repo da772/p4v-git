@@ -8,6 +8,14 @@
 
 namespace p4vgit::ui::widgets
 {
+struct TitleBarResult
+{
+    bool minimize = false;
+    bool maximize = false;
+    bool close = false;
+    bool drag = false;
+};
+
 enum class DockspaceSide
 {
     Left,
@@ -26,6 +34,9 @@ struct DockspaceDefaultLayout
 
 extern void DrawDockspace();
 extern void DrawDockspace(std::span<const DockspaceDefaultLayout> defaultLayout);
+extern void DrawDockspace(std::span<const DockspaceDefaultLayout> defaultLayout, float topInset);
+extern float TitleBarHeight();
+extern TitleBarResult DrawTitleBar(std::string_view title, std::string_view subtitle, bool maximized);
 extern float FrameRate();
 extern bool BeginWindow(std::string_view title);
 extern void EndWindow();
