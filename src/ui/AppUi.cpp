@@ -1,5 +1,6 @@
 #include "ui/AppUi.h"
 
+#include "git/GitRepository.h"
 #include "log/StdoutLog.h"
 #include "P4vGitVersion.h"
 #include "platform/UrlLauncher.h"
@@ -1105,9 +1106,20 @@ void AppUi::DrawFileEntry(const std::filesystem::directory_entry& entry)
             if (ui::widgets::MenuItem("Revert", !IsShelfBusy(*activeShelf)))
             {
                 if (HasLocalChanges(relativePath))
-                    RequestConfirmation(ConfirmationAction::RevertActiveFile, *activeShelf, relativePath);
+								{
+									for (const std::string& s : m_selectedActiveFiles)
+									{
+                    RequestConfirmation(ConfirmationAction::RevertActiveFile, *activeShelf, s);
+									}
+								}
                 else
-                    RevertCheckedOutFile(*activeShelf, relativePath);
+								{
+									for (const std::string& s : m_selectedActiveFiles)
+									{
+                    RevertCheckedOutFile(*activeShelf, s);
+									}
+
+								}
             }
         }
         else
@@ -1310,7 +1322,19 @@ void AppUi::DrawShelfPanel(const std::string& shelf, bool isMainShelf)
     if (!isMainShelf)
     {
         ui::widgets::Separator();
-        if (ui::widgets::BeginTreeNode("Files in Shelf##" + shelf))
+				bool open = ui::widgets::BeginTreeNode("Files in Shelf##" + shelf);
+
+				if (ui::widgets::BeginContextMenuForLastItem())
+				{
+					if (ui::widgets::MenuItem("Restore", true))
+					{
+            const std::vector<GitStatusEntry> shelfFiles = ShelfFiles(shelf);
+						RestoreShelfFiles(shelf, shelfFiles);
+					}
+					ui::widgets::EndContextMenu();
+				}
+
+        if (open)
         {
             const std::vector<GitStatusEntry> shelfFiles = ShelfFiles(shelf);
             if (shelfFiles.empty())
@@ -1325,6 +1349,7 @@ void AppUi::DrawShelfPanel(const std::string& shelf, bool isMainShelf)
 
             ui::widgets::EndTreeNode();
         }
+
     }
 
     ui::widgets::EndTreeNode();
@@ -1741,6 +1766,23 @@ void AppUi::RestoreShelfFile(const std::string& shelf, const std::string& file)
     StartShelfJob(shelf, "Restoring", std::async(std::launch::async, [repoRoot, shelf, file]() {
         return RunRestoreShelfFileJob(repoRoot, shelf, file);
     }));
+}
+
+void AppUi::RestoreShelfFiles(const std::string& shelf, const std::vector<GitStatusEntry>& files)
+{
+    if (IsShelfBusy(shelf))
+        return;
+
+		// this doesnt work -.-
+    const std::filesystem::path repoRoot = m_sourcePath;
+    StartShelfJob(shelf, "Restoring", std::async(std::launch::async, [repoRoot, shelf, files]() {
+				ShelfJobResult result = {};
+				for (size_t i = 0; i < files.size(); i++)
+				{
+					result = RunRestoreShelfFileJob(repoRoot, shelf, files[i].path);
+				}
+        return result;
+			}));
 }
 
 void AppUi::CreateShelfFromInput()

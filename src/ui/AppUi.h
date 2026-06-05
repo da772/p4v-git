@@ -168,6 +168,7 @@ private:
     void OpenFileDiff(const std::string& file);
     void RevertShelfFile(const std::string& shelf, const std::string& file);
     void RestoreShelfFile(const std::string& shelf, const std::string& file);
+    void RestoreShelfFiles(const std::string& shelf, const std::vector<GitStatusEntry>& files);
     void CreateShelfFromInput();
     void CreateTargetBranchFromInput();
     void SelectTargetBranch(std::string branch);
