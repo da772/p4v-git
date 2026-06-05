@@ -149,6 +149,7 @@ private:
     std::vector<std::string> MainSubmittableFiles() const;
     std::optional<std::string> ActiveShelfForFile(std::string_view relativePath) const;
     bool IsFileActiveInShelf(std::string_view relativePath) const;
+    bool HasUnshelvedChanges() const;
     bool HasLocalChanges(std::string_view relativePath) const;
     bool IsFileActive(std::string_view relativePath) const;
     bool IsActiveFileSelected(std::string_view shelf, std::string_view file) const;
