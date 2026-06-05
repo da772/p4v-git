@@ -839,14 +839,19 @@ void AppUi::DrawWorkspaceExplorer()
             {
                 if (ui::widgets::BeginCombo("Target Branch", m_targetBranch))
                 {
+                    const bool blockBranchSwitch = HasUnshelvedChanges();
                     for (const std::string& branch : m_branches)
                     {
-                        if (ui::widgets::Selectable(branch, branch == m_targetBranch))
+                        const bool canSelectBranch = branch == m_targetBranch || !blockBranchSwitch;
+                        if (ui::widgets::Selectable(branch, branch == m_targetBranch, canSelectBranch))
                             SelectTargetBranch(branch);
                     }
 
                     ui::widgets::EndCombo();
                 }
+
+                if (HasUnshelvedChanges())
+                    ui::widgets::Text("Shelve or revert active changes before switching branches.");
             }
 
             if (m_mainBehindCount > 0)
@@ -1424,6 +1429,16 @@ bool AppUi::IsFileActiveInShelf(std::string_view relativePath) const
     return false;
 }
 
+bool AppUi::HasUnshelvedChanges() const
+{
+    if (!m_statusEntries.empty())
+        return true;
+
+    return std::any_of(m_workspaceState.Shelves().begin(), m_workspaceState.Shelves().end(), [](const ShelfWorkspaceFiles& shelf) {
+        return !shelf.files.empty();
+    });
+}
+
 bool AppUi::HasLocalChanges(std::string_view relativePath) const
 {
     return std::any_of(m_statusEntries.begin(), m_statusEntries.end(), [relativePath](const GitStatusEntry& entry) {
@@ -1676,6 +1691,12 @@ void AppUi::SelectTargetBranch(std::string branch)
 {
     if (!m_repository.has_value() || branch.empty() || branch == m_targetBranch || IsShelfBusy(m_targetBranch))
         return;
+
+    if (HasUnshelvedChanges())
+    {
+        std::cout << "Cannot switch target branch while there are unshelved active changes.\n";
+        return;
+    }
 
     const std::filesystem::path repoRoot = m_sourcePath;
     StartShelfJob(m_targetBranch, "Switching branch", std::async(std::launch::async, [repoRoot, branch]() {

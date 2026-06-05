@@ -356,10 +356,13 @@ bool BeginCombo(std::string_view label, std::string_view preview)
     return ImGui::BeginCombo(labelText.c_str(), previewText.c_str());
 }
 
-bool Selectable(std::string_view label, bool selected)
+bool Selectable(std::string_view label, bool selected, bool enabled)
 {
     const std::string labelText = ToString(label);
-    return ImGui::Selectable(labelText.c_str(), selected);
+    ImGui::BeginDisabled(!enabled);
+    const bool clicked = enabled && ImGui::Selectable(labelText.c_str(), selected);
+    ImGui::EndDisabled();
+    return clicked;
 }
 
 void EndCombo()

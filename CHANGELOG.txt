@@ -1,6 +1,11 @@
 p4v-git changelog
 ==================
 
+0.1.25
+- Restored remote branch discovery without exposing the `origin` HEAD pseudo-ref as a selectable branch.
+- Checkout remote-only target branches by creating a local tracking branch automatically.
+- Disabled target branch switching while there are unshelved local changes or checked-out active files.
+
 0.1.24
 - Changed shelf Submit with active files to open the shelf summary/description modal first.
 - Added a chained shelf job that shelves active files, creates or updates the shelf link, then submits the shelf in one operation.
