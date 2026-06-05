@@ -147,6 +147,28 @@ ShelfJobResult AppUi::RunShelveShelfJob(const std::filesystem::path& repoRoot, s
     return result;
 }
 
+ShelfJobResult AppUi::RunShelveAndSubmitShelfJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelf, std::vector<std::string> files, std::string summary, std::string description)
+{
+    GitRepository repository(repoRoot);
+    ShelfService shelfService;
+    shelfService.SetRepository(&repository);
+    shelfService.SetTargetBranch(std::move(targetBranch));
+
+    ShelfJobResult result;
+    result.shelf = std::move(shelf);
+    result.files = files;
+    result.shelfUrl = shelfService.ShelveFilesAndEnsureShelfLink(result.shelf, files, summary, description);
+    if (result.shelfUrl.empty())
+        return result;
+
+    result.submit = shelfService.SubmitShelf(result.shelf, result.files);
+    if (!result.submit.shelfUrl.empty())
+        result.shelfUrl = result.submit.shelfUrl;
+    result.succeeded = result.submit.merged;
+    result.deleteShelfState = result.submit.merged;
+    return result;
+}
+
 ShelfJobResult AppUi::RunSubmitShelfJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelf, std::vector<std::string> files)
 {
     GitRepository repository(repoRoot);
@@ -632,9 +654,10 @@ void AppUi::DrawMainSubmitPopup()
     ui::widgets::EndModal();
 }
 
-void AppUi::OpenShelvePopup(std::string shelf)
+void AppUi::OpenShelvePopup(std::string shelf, bool submitAfterShelve)
 {
     m_shelveShelf = std::move(shelf);
+    m_shelveSubmitAfter = submitAfterShelve;
     std::fill(m_shelveSummaryInput.begin(), m_shelveSummaryInput.end(), '\0');
     std::fill(m_shelveDescriptionInput.begin(), m_shelveDescriptionInput.end(), '\0');
     constexpr std::string_view defaultSummary = "Shelve files";
@@ -656,7 +679,10 @@ void AppUi::DrawShelvePopup()
         return;
 
     const std::vector<std::string> files = m_workspaceState.CheckedOutFiles(m_shelveShelf);
-    ui::widgets::Text("Commit active changes to shelf:");
+    if (m_shelveSubmitAfter)
+        ui::widgets::Text("Commit active changes to shelf, then submit:");
+    else
+        ui::widgets::Text("Commit active changes to shelf:");
     ui::widgets::Text(m_shelveShelf);
     ui::widgets::Text(std::to_string(files.size()) + " file(s)");
     if (!m_shelveError.empty())
@@ -672,9 +698,12 @@ void AppUi::DrawShelvePopup()
         !IsShelfBusy(m_shelveShelf) &&
         m_shelveSummaryInput[0] != '\0';
     ui::widgets::BeginDisabled(!canShelve);
-    if (ui::widgets::Button("Shelve"))
+    if (ui::widgets::Button(m_shelveSubmitAfter ? "Submit" : "Shelve"))
     {
-        ShelveShelf(m_shelveShelf);
+        if (m_shelveSubmitAfter)
+            ShelveAndSubmitShelf(m_shelveShelf);
+        else
+            ShelveShelf(m_shelveShelf);
         ui::widgets::CloseCurrentPopup();
     }
     ui::widgets::EndDisabled();
@@ -684,6 +713,7 @@ void AppUi::DrawShelvePopup()
     {
         m_shelveError.clear();
         m_shelveShelf.clear();
+        m_shelveSubmitAfter = false;
         ui::widgets::CloseCurrentPopup();
     }
 
@@ -768,6 +798,8 @@ void AppUi::DrawAppTitleBar()
     const ui::widgets::TitleBarResult titleBar = ui::widgets::DrawTitleBar(P4VGIT_APP_NAME, subtitle, m_window != nullptr && m_window->IsMaximized());
     if (m_window == nullptr)
         return;
+
+    m_window->SetTitleBarHitTestRegion({ true, ui::widgets::TitleBarHeight(), titleBar.dragRegionRight });
 
     if (titleBar.close)
         m_window->RequestClose();
@@ -1121,8 +1153,13 @@ void AppUi::DrawShelfPanel(const std::string& shelf, bool isMainShelf)
         }
         else
         {
-			if (ui::widgets::MenuItem("Submit", !shelfBusy))
-				SubmitShelf(shelf);
+            if (ui::widgets::MenuItem("Submit", !shelfBusy))
+            {
+                if (!m_workspaceState.CheckedOutFiles(shelf).empty())
+                    OpenShelvePopup(shelf, true);
+                else
+                    SubmitShelf(shelf);
+            }
 
             if (ui::widgets::MenuItem("Shelve", !shelfBusy))
                 OpenShelvePopup(shelf);
@@ -1669,6 +1706,32 @@ void AppUi::ShelveShelf(const std::string& shelf)
 
     StartShelfJob(shelf, "Shelving", std::async(std::launch::async, [repoRoot, targetBranch, shelf, files, summary, description]() {
         return RunShelveShelfJob(repoRoot, targetBranch, shelf, files, summary, description);
+    }));
+}
+
+void AppUi::ShelveAndSubmitShelf(const std::string& shelf)
+{
+    if (IsShelfBusy(shelf))
+        return;
+
+    const std::filesystem::path repoRoot = m_sourcePath;
+    const std::string targetBranch = m_targetBranch;
+    const std::vector<std::string> files = m_workspaceState.CheckedOutFiles(shelf);
+    const std::string summary = m_shelveSummaryInput.data();
+    const std::string description = m_shelveDescriptionInput.data();
+    if (files.empty())
+    {
+        m_shelveError = "No files to shelve before submitting.";
+        return;
+    }
+    if (summary.empty())
+    {
+        m_shelveError = "Summary is required.";
+        return;
+    }
+
+    StartShelfJob(shelf, "Shelving and submitting", std::async(std::launch::async, [repoRoot, targetBranch, shelf, files, summary, description]() {
+        return RunShelveAndSubmitShelfJob(repoRoot, targetBranch, shelf, files, summary, description);
     }));
 }
 
