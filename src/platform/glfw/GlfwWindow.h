@@ -19,6 +19,11 @@ public:
     void Shutdown() override;
     bool ShouldClose() const override;
     void PollEvents() override;
+    void RequestClose() override;
+    void Minimize() override;
+    void ToggleMaximize() override;
+    bool IsMaximized() const override;
+    void StartMoveDrag() override;
     bool IsMinimized() const override;
     bool IsFocused() const override;
     void Sleep(int milliseconds) const override;
@@ -32,9 +37,13 @@ public:
 private:
     static void ErrorCallback(int error, const char* description);
     static float GetPrimaryMonitorScale();
+    void UpdateMoveDrag();
 
     GLFWwindow* m_window = nullptr;
     float m_contentScale = 1.0f;
+    double m_dragOffsetX = 0.0;
+    double m_dragOffsetY = 0.0;
+    bool m_dragging = false;
     bool m_initialized = false;
 };
 }
