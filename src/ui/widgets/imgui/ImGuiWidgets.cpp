@@ -65,6 +65,13 @@ static bool DrawTitleBarButton(std::string_view id, ImU32 color, ImU32 hoverColo
     return clicked;
 }
 
+static float DistanceSquared(ImVec2 lhs, ImVec2 rhs)
+{
+    const float x = lhs.x - rhs.x;
+    const float y = lhs.y - rhs.y;
+    return x * x + y * y;
+}
+
 static void BuildDefaultDockspaceLayout(ImGuiID dockspaceId, ImVec2 dockspaceSize, std::span<const DockspaceDefaultLayout> defaultLayout)
 {
     if (ImGui::DockBuilderGetNode(dockspaceId) != nullptr)
@@ -200,15 +207,48 @@ TitleBarResult DrawTitleBar(std::string_view title, std::string_view subtitle, b
     ImGui::SetCursorScreenPos(ImVec2(min.x + (ImGui::GetWindowWidth() - textSize.x) * 0.5f, min.y + (height - textSize.y) * 0.5f + 1.0f * scale));
     ImGui::TextUnformatted(text.c_str());
 
-    ImGui::SetCursorScreenPos(ImVec2(min.x, min.y));
-    ImGui::InvisibleButton("##titlebar-drag", ImVec2(std::max(0.0f, controlX - min.x - edgePadding), height));
-    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+    static double lastTitleBarClickTime = -1.0;
+    static ImVec2 lastTitleBarClickPosition = ImVec2(0.0f, 0.0f);
+    static bool titleBarDragCandidate = false;
+    static bool titleBarDragStarted = false;
+
+    const ImGuiIO& io = ImGui::GetIO();
+    const ImVec2 dragMin = min;
+    const ImVec2 dragMax = ImVec2(std::max(min.x, controlX - edgePadding), max.y);
+    result.dragRegionRight = dragMax.x - min.x;
+    const bool titleBarHovered = ImGui::IsMouseHoveringRect(dragMin, dragMax, false);
+
+    if (ImGui::IsMouseReleased(ImGuiMouseButton_Left))
     {
-        result.maximize = true;
+        titleBarDragCandidate = false;
+        titleBarDragStarted = false;
     }
-    else
+
+    if (titleBarHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
     {
-        result.drag = ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 1.0f * scale);
+        const double now = ImGui::GetTime();
+        const ImVec2 clickPosition = io.MousePos;
+        const float maxDistance = std::max(8.0f * scale, io.MouseDoubleClickMaxDist);
+        if (lastTitleBarClickTime >= 0.0 &&
+            now - lastTitleBarClickTime <= static_cast<double>(io.MouseDoubleClickTime) &&
+            DistanceSquared(clickPosition, lastTitleBarClickPosition) <= maxDistance * maxDistance)
+        {
+            result.maximize = true;
+            lastTitleBarClickTime = -1.0;
+            titleBarDragCandidate = false;
+        }
+        else
+        {
+            lastTitleBarClickTime = now;
+            lastTitleBarClickPosition = clickPosition;
+            titleBarDragCandidate = true;
+        }
+    }
+
+    if (!result.maximize && titleBarDragCandidate && !titleBarDragStarted && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 8.0f * scale))
+    {
+        result.drag = true;
+        titleBarDragStarted = true;
     }
 
     ImGui::End();
