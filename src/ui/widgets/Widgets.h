@@ -51,7 +51,7 @@ extern void BeginDisabled(bool disabled = true);
 extern void EndDisabled();
 extern void Spinner(std::string_view label);
 extern bool BeginCombo(std::string_view label, std::string_view preview);
-extern bool Selectable(std::string_view label, bool selected);
+extern bool Selectable(std::string_view label, bool selected, bool enabled = true);
 extern void EndCombo();
 extern void SameLine();
 extern void Separator();
