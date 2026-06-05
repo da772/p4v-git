@@ -10,16 +10,80 @@
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
 #include <windows.h>
+#include <windowsx.h>
 #include <shellapi.h>
 
 #include "platform/windows/P4vGitWindowsResource.h"
+
+#ifdef IsMaximized
+#undef IsMaximized
+#endif
+
+#ifdef IsMinimized
+#undef IsMinimized
+#endif
 #endif
 
 #include <cstdio>
+#include <unordered_map>
 #include <utility>
 
 namespace p4vgit
 {
+#ifdef _WIN32
+struct WindowsSubclassState
+{
+    GlfwWindow* window = nullptr;
+    WNDPROC previousProc = nullptr;
+};
+
+static std::unordered_map<HWND, WindowsSubclassState> g_windowsSubclassStates;
+
+static LRESULT CallPreviousWindowProc(HWND handle, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    const auto state = g_windowsSubclassStates.find(handle);
+    if (state != g_windowsSubclassStates.end() && state->second.previousProc != nullptr)
+        return CallWindowProcW(state->second.previousProc, handle, message, wParam, lParam);
+
+    return DefWindowProcW(handle, message, wParam, lParam);
+}
+
+static LRESULT CALLBACK P4vGitWindowProc(HWND handle, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    const auto state = g_windowsSubclassStates.find(handle);
+    GlfwWindow* window = state != g_windowsSubclassStates.end() ? state->second.window : nullptr;
+
+    if (message == WM_NCHITTEST && window != nullptr)
+    {
+        const LRESULT hit = CallPreviousWindowProc(handle, message, wParam, lParam);
+        if (hit != HTCLIENT)
+            return hit;
+
+        POINT cursor{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+        ScreenToClient(handle, &cursor);
+        if (window->IsPointInTitleBarHitTest(static_cast<double>(cursor.x), static_cast<double>(cursor.y)))
+            return HTCAPTION;
+
+        return HTCLIENT;
+    }
+
+    if (message == WM_NCLBUTTONDBLCLK && window != nullptr && wParam == HTCAPTION)
+    {
+        window->ToggleMaximize();
+        return 0;
+    }
+
+    if (message == WM_NCDESTROY)
+    {
+        const LRESULT result = CallPreviousWindowProc(handle, message, wParam, lParam);
+        g_windowsSubclassStates.erase(handle);
+        return result;
+    }
+
+    return CallPreviousWindowProc(handle, message, wParam, lParam);
+}
+#endif
+
 #ifndef __APPLE__
 void ApplyRuntimeWindowIcon(GLFWwindow* window)
 {
@@ -128,6 +192,7 @@ bool GlfwWindow::Initialize(const WindowConfig& config)
 
 #ifdef _WIN32
     ApplyWindowsWindowIcon(m_window);
+    InstallNativeMessageHook();
 #endif
 
     glfwShowWindow(m_window);
@@ -140,6 +205,10 @@ void GlfwWindow::Shutdown()
 {
     if (!m_initialized)
         return;
+
+#ifdef _WIN32
+    RemoveNativeMessageHook();
+#endif
 
     if (m_window != nullptr)
     {
@@ -210,6 +279,11 @@ void GlfwWindow::StartMoveDrag()
 #endif
 }
 
+void GlfwWindow::SetTitleBarHitTestRegion(const TitleBarHitTestRegion& region)
+{
+    m_titleBarHitTestRegion = region;
+}
+
 bool GlfwWindow::IsMinimized() const
 {
     return glfwGetWindowAttrib(m_window, GLFW_ICONIFIED) != 0;
@@ -271,6 +345,57 @@ float GlfwWindow::GetPrimaryMonitorScale()
     float y_scale = 1.0f;
     glfwGetMonitorContentScale(monitor, &x_scale, &y_scale);
     return x_scale > y_scale ? x_scale : y_scale;
+}
+
+void GlfwWindow::InstallNativeMessageHook()
+{
+#ifdef _WIN32
+    if (m_window == nullptr)
+        return;
+
+    HWND handle = glfwGetWin32Window(m_window);
+    if (handle == nullptr || g_windowsSubclassStates.find(handle) != g_windowsSubclassStates.end())
+        return;
+
+    WindowsSubclassState state;
+    state.window = this;
+    state.previousProc = reinterpret_cast<WNDPROC>(GetWindowLongPtrW(handle, GWLP_WNDPROC));
+    g_windowsSubclassStates.emplace(handle, state);
+    SetWindowLongPtrW(handle, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(P4vGitWindowProc));
+#endif
+}
+
+void GlfwWindow::RemoveNativeMessageHook()
+{
+#ifdef _WIN32
+    if (m_window == nullptr)
+        return;
+
+    HWND handle = glfwGetWin32Window(m_window);
+    const auto state = g_windowsSubclassStates.find(handle);
+    if (state == g_windowsSubclassStates.end())
+        return;
+
+    const LONG_PTR currentProc = GetWindowLongPtrW(handle, GWLP_WNDPROC);
+    if (currentProc == reinterpret_cast<LONG_PTR>(P4vGitWindowProc) && state->second.previousProc != nullptr)
+        SetWindowLongPtrW(handle, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(state->second.previousProc));
+
+    g_windowsSubclassStates.erase(state);
+#endif
+}
+
+bool GlfwWindow::IsPointInTitleBarHitTest(double clientX, double clientY) const
+{
+    if (!m_titleBarHitTestRegion.enabled)
+        return false;
+
+    if (m_titleBarHitTestRegion.height <= 0.0f || m_titleBarHitTestRegion.dragRegionRight <= 0.0f)
+        return false;
+
+    return clientX >= 0.0 &&
+           clientY >= 0.0 &&
+           clientX < static_cast<double>(m_titleBarHitTestRegion.dragRegionRight) &&
+           clientY < static_cast<double>(m_titleBarHitTestRegion.height);
 }
 
 void GlfwWindow::UpdateMoveDrag()

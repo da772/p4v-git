@@ -1,6 +1,23 @@
 p4v-git changelog
 ==================
 
+0.1.24
+- Changed shelf Submit with active files to open the shelf summary/description modal first.
+- Added a chained shelf job that shelves active files, creates or updates the shelf link, then submits the shelf in one operation.
+- Kept direct Submit available for shelves that already have committed shelf contents and no active files.
+
+0.1.23
+- Added native Windows caption hit testing for the custom title bar so drag and Snap behave like a normal window.
+- Excluded the custom title-bar buttons from the native drag region so minimize, maximize, and close remain clickable.
+
+0.1.22
+- Fixed title-bar mouse capture by replacing the drag InvisibleButton with passive hit testing.
+- Kept native window drag and double-click maximize/restore from fighting over the same click.
+
+0.1.21
+- Replaced title-bar double-click handling with a custom click-time/position detector.
+- Increased the title-bar drag threshold so small movement between clicks does not steal maximize/restore.
+
 0.1.20
 - Added a Shelve modal for existing shelves with Summary and Description fields.
 - Defaulted the Shelve summary to the previous hard-coded commit message, `Shelve files`.
