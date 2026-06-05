@@ -8,9 +8,52 @@
 #include <GLFW/glfw3.h>
 
 #include <cstdint>
+#include <filesystem>
+#include <vector>
+
+#ifdef _WIN32
+#include <windows.h>
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#else
+#include <limits.h>
+#include <unistd.h>
+#endif
 
 namespace p4vgit
 {
+static std::filesystem::path ExecutableDirectory()
+{
+#ifdef _WIN32
+    std::vector<wchar_t> path(MAX_PATH);
+    DWORD length = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
+    while (length == path.size())
+    {
+        path.resize(path.size() * 2);
+        length = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
+    }
+
+    if (length > 0)
+        return std::filesystem::path(std::wstring(path.data(), length)).parent_path();
+#elif defined(__APPLE__)
+    uint32_t size = 0;
+    _NSGetExecutablePath(nullptr, &size);
+    std::vector<char> path(size);
+    if (_NSGetExecutablePath(path.data(), &size) == 0)
+        return std::filesystem::weakly_canonical(std::filesystem::path(path.data())).parent_path();
+#else
+    std::vector<char> path(PATH_MAX);
+    const ssize_t length = readlink("/proc/self/exe", path.data(), path.size() - 1);
+    if (length > 0)
+    {
+        path[static_cast<size_t>(length)] = '\0';
+        return std::filesystem::path(path.data()).parent_path();
+    }
+#endif
+
+    return std::filesystem::current_path();
+}
+
 static ImVec4 Color(uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha = 255)
 {
     constexpr float scale = 1.0f / 255.0f;
@@ -115,6 +158,8 @@ void ImGuiLayer::Initialize(Window& window, GuiRendererBackend& m_rendererbacken
     ImGui::CreateContext();
 
     ImGuiIO& io = ImGui::GetIO();
+    m_iniPath = (ExecutableDirectory() / "gui.ini").string();
+    io.IniFilename = m_iniPath.c_str();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
