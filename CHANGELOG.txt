@@ -1,6 +1,7 @@
 p4v-git changelog
 ==================
 
+
 0.1.27
 - Fixed the target branch `+` button layout so it stays visible and clickable beside the branch selector.
 - Added reusable UI width helpers for constraining inline controls.

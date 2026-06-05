@@ -1,5 +1,6 @@
 # p4v-git
 
+o
 <img src="icon.png" alt="p4v-git icon" width="96">
 
 `p4v-git` is a cross-platform desktop Git client inspired by Perforce P4V. The goal is to provide a familiar workspace-oriented UI for browsing a repository, organizing active file changes into shelves, reviewing shelf diffs, opening/merging pull requests, and submitting changes back to a selected target branch.
