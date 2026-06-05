@@ -363,7 +363,7 @@ bool BeginCombo(std::string_view label, std::string_view preview)
 {
     const std::string labelText = ToString(label);
     const std::string previewText = ToString(preview);
-    return ImGui::BeginCombo(labelText.c_str(), previewText.c_str());
+    return ImGui::BeginCombo(labelText.c_str(), previewText.c_str(), ImGuiComboFlags_WidthFitPreview);
 }
 
 bool Selectable(std::string_view label, bool selected, bool enabled)
