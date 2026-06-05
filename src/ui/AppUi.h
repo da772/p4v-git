@@ -96,6 +96,7 @@ public:
 private:
     static RepositorySnapshot LoadRepositorySnapshot(const std::filesystem::path& selectedPath, bool discoverRepository, bool logCommands, uint64_t refreshGeneration);
     static ShelfJobResult RunCreateShelfJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelfName, std::vector<std::string> files);
+    static ShelfJobResult RunCreateTargetBranchJob(const std::filesystem::path& repoRoot, std::string baseBranch, std::string newBranch);
     static ShelfJobResult RunSelectTargetBranchJob(const std::filesystem::path& repoRoot, std::string targetBranch);
     static ShelfJobResult RunShelveShelfJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelf, std::vector<std::string> files, std::string summary, std::string description);
     static ShelfJobResult RunShelveAndSubmitShelfJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelf, std::vector<std::string> files, std::string summary, std::string description);
@@ -124,6 +125,8 @@ private:
     void DrawShelvePopup();
     void OpenCreateShelfPopup();
     void DrawCreateShelfPopup();
+    void OpenCreateBranchPopup();
+    void DrawCreateBranchPopup();
     void DrawAppTitleBar();
     void DrawWorkspaceExplorer();
     void DrawFileChanges();
@@ -166,6 +169,7 @@ private:
     void RevertShelfFile(const std::string& shelf, const std::string& file);
     void RestoreShelfFile(const std::string& shelf, const std::string& file);
     void CreateShelfFromInput();
+    void CreateTargetBranchFromInput();
     void SelectTargetBranch(std::string branch);
     void ShelveShelf(const std::string& shelf);
     void ShelveAndSubmitShelf(const std::string& shelf);
@@ -182,6 +186,7 @@ private:
     Window* m_window = nullptr;
     std::array<char, 1024> m_sourcePathInput = {};
     std::array<char, 128> m_newShelfNameInput = {};
+    std::array<char, 128> m_newBranchNameInput = {};
     std::array<char, 256> m_mainSubmitSummaryInput = {};
     std::array<char, 2048> m_mainSubmitDescriptionInput = {};
     std::array<char, 256> m_shelveSummaryInput = {};
@@ -217,10 +222,12 @@ private:
     bool m_openShelvePopup = false;
     bool m_shelveSubmitAfter = false;
     bool m_openCreateShelfPopup = false;
+    bool m_openCreateBranchPopup = false;
     std::string m_mainSubmitError;
     std::string m_shelveError;
     std::string m_shelveShelf;
     std::string m_createShelfError;
+    std::string m_createBranchError;
     std::string m_selectedActiveShelf;
     std::vector<std::string> m_selectedActiveFiles;
     size_t m_lastSelectedActiveFileIndex = 0;

@@ -182,6 +182,18 @@ bool GitRepository::CheckoutBranch(std::string_view branch)
     return Run("checkout " + Quote(branch)).Succeeded();
 }
 
+bool GitRepository::CreateAndCheckoutBranch(std::string_view branch, std::string_view startPoint)
+{
+    if (branch.empty() || BranchExists(branch, false))
+        return false;
+
+    std::string command = "checkout -b " + Quote(branch);
+    if (!startPoint.empty())
+        command += " " + Quote(startPoint);
+
+    return Run(command).Succeeded();
+}
+
 std::string GitRepository::Trim(std::string text)
 {
     while (!text.empty() && (text.back() == '\n' || text.back() == '\r' || text.back() == ' ' || text.back() == '\t'))
