@@ -117,6 +117,17 @@ ShelfJobResult AppUi::RunCreateShelfJob(const std::filesystem::path& repoRoot, s
     return result;
 }
 
+ShelfJobResult AppUi::RunCreateTargetBranchJob(const std::filesystem::path& repoRoot, std::string baseBranch, std::string newBranch)
+{
+    GitRepository repository(repoRoot);
+
+    ShelfJobResult result;
+    result.shelf = std::move(newBranch);
+    result.succeeded = repository.CreateAndCheckoutBranch(result.shelf, baseBranch);
+    result.selectTargetBranch = result.succeeded;
+    return result;
+}
+
 ShelfJobResult AppUi::RunSelectTargetBranchJob(const std::filesystem::path& repoRoot, std::string targetBranch)
 {
     GitRepository repository(repoRoot);
@@ -354,6 +365,11 @@ void AppUi::PollAsyncOperations()
         {
             m_targetBranch = result.shelf.empty() ? "main" : result.shelf;
             m_selectedBranch = m_targetBranch;
+            if (std::find(m_branches.begin(), m_branches.end(), m_targetBranch) == m_branches.end())
+            {
+                m_branches.push_back(m_targetBranch);
+                std::sort(m_branches.begin(), m_branches.end());
+            }
             m_workspaceState.SetTargetBranch(m_targetBranch);
             m_workspaceState.SetActiveShelf(m_targetBranch);
             m_workspaceState.Save();
@@ -768,6 +784,57 @@ void AppUi::DrawCreateShelfPopup()
     ui::widgets::EndModal();
 }
 
+void AppUi::OpenCreateBranchPopup()
+{
+    std::fill(m_newBranchNameInput.begin(), m_newBranchNameInput.end(), '\0');
+    m_createBranchError.clear();
+    m_openCreateBranchPopup = true;
+}
+
+void AppUi::DrawCreateBranchPopup()
+{
+    constexpr std::string_view popupId = "Create Branch";
+    if (m_openCreateBranchPopup)
+    {
+        ui::widgets::OpenPopup(popupId);
+        m_openCreateBranchPopup = false;
+    }
+
+    if (!ui::widgets::BeginModal(popupId))
+        return;
+
+    ui::widgets::Text("Create a branch from " + m_targetBranch + ".");
+    if (HasUnshelvedChanges())
+        ui::widgets::Text("Shelve or revert active changes before creating a branch.");
+    if (!m_createBranchError.empty())
+        ui::widgets::Text(m_createBranchError);
+
+    ui::widgets::Separator();
+    ui::widgets::InputText("Branch name", m_newBranchNameInput.data(), m_newBranchNameInput.size());
+    ui::widgets::Separator();
+
+    const bool canCreate = m_repository.has_value() &&
+        m_newBranchNameInput[0] != '\0' &&
+        !HasUnshelvedChanges() &&
+        !IsShelfBusy(m_targetBranch);
+    ui::widgets::BeginDisabled(!canCreate);
+    if (ui::widgets::Button("Create"))
+    {
+        CreateTargetBranchFromInput();
+        ui::widgets::CloseCurrentPopup();
+    }
+    ui::widgets::EndDisabled();
+
+    ui::widgets::SameLine();
+    if (ui::widgets::Button("Cancel"))
+    {
+        m_createBranchError.clear();
+        ui::widgets::CloseCurrentPopup();
+    }
+
+    ui::widgets::EndModal();
+}
+
 void AppUi::Draw()
 {
     PollAsyncOperations();
@@ -790,6 +857,7 @@ void AppUi::Draw()
     DrawMainSubmitPopup();
     DrawShelvePopup();
     DrawCreateShelfPopup();
+    DrawCreateBranchPopup();
 }
 
 void AppUi::DrawAppTitleBar()
@@ -837,7 +905,12 @@ void AppUi::DrawWorkspaceExplorer()
             ui::widgets::Text("Repo: " + m_sourcePath.string());
             if (!m_branches.empty())
             {
-                if (ui::widgets::BeginCombo("Target Branch", m_targetBranch))
+                ui::widgets::Text("Target Branch");
+                constexpr float createBranchButtonWidth = 28.0f;
+                constexpr float branchControlGap = 8.0f;
+                const float branchComboWidth = std::max(120.0f, ui::widgets::AvailableWidth() - createBranchButtonWidth - branchControlGap);
+                ui::widgets::SetNextItemWidth(branchComboWidth);
+                if (ui::widgets::BeginCombo("##TargetBranch", m_targetBranch))
                 {
                     const bool blockBranchSwitch = HasUnshelvedChanges();
                     for (const std::string& branch : m_branches)
@@ -849,6 +922,13 @@ void AppUi::DrawWorkspaceExplorer()
 
                     ui::widgets::EndCombo();
                 }
+
+                ui::widgets::SameLine();
+                const bool canOpenCreateBranch = !HasUnshelvedChanges() && !IsShelfBusy(m_targetBranch);
+                ui::widgets::BeginDisabled(!canOpenCreateBranch);
+                if (ui::widgets::Button("+"))
+                    OpenCreateBranchPopup();
+                ui::widgets::EndDisabled();
 
                 if (HasUnshelvedChanges())
                     ui::widgets::Text("Shelve or revert active changes before switching branches.");
@@ -1685,6 +1765,35 @@ void AppUi::CreateShelfFromInput()
         return RunCreateShelfJob(repoRoot, targetBranch, shelfName, std::move(files));
     }));
     std::fill(m_newShelfNameInput.begin(), m_newShelfNameInput.end(), '\0');
+}
+
+void AppUi::CreateTargetBranchFromInput()
+{
+    if (!m_repository.has_value())
+        return;
+
+    const std::string branchName = m_newBranchNameInput.data();
+    if (branchName.empty())
+        return;
+
+    if (HasUnshelvedChanges())
+    {
+        m_createBranchError = "Shelve or revert active changes before creating a branch.";
+        return;
+    }
+
+    if (std::find(m_branches.begin(), m_branches.end(), branchName) != m_branches.end())
+    {
+        m_createBranchError = "Branch already exists.";
+        return;
+    }
+
+    const std::filesystem::path repoRoot = m_sourcePath;
+    const std::string baseBranch = m_targetBranch;
+    StartShelfJob(m_targetBranch, "Creating branch", std::async(std::launch::async, [repoRoot, baseBranch, branchName]() {
+        return RunCreateTargetBranchJob(repoRoot, baseBranch, branchName);
+    }));
+    std::fill(m_newBranchNameInput.begin(), m_newBranchNameInput.end(), '\0');
 }
 
 void AppUi::SelectTargetBranch(std::string branch)

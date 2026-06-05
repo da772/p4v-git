@@ -319,6 +319,16 @@ bool Button(std::string_view label)
     return ImGui::Button(labelText.c_str());
 }
 
+float AvailableWidth()
+{
+    return ImGui::GetContentRegionAvail().x;
+}
+
+void SetNextItemWidth(float width)
+{
+    ImGui::SetNextItemWidth(width);
+}
+
 bool InputText(std::string_view label, char* buffer, size_t bufferSize)
 {
     const std::string labelText = ToString(label);
