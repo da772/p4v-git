@@ -2,6 +2,8 @@
 
 #include "gui/GuiLayer.h"
 
+#include <string>
+
 namespace p4vgit
 {
 class ImGuiLayer final : public GuiLayer
@@ -20,6 +22,7 @@ public:
     GuiDrawData GetDrawData() const override;
 
 private:
+    std::string m_iniPath;
     GuiRendererBackend* m_rendererBackend = nullptr;
     bool m_initialized = false;
 };

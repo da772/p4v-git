@@ -1,6 +1,15 @@
 p4v-git changelog
 ==================
 
+0.1.27
+- Fixed the target branch `+` button layout so it stays visible and clickable beside the branch selector.
+- Added reusable UI width helpers for constraining inline controls.
+
+0.1.26
+- Changed Dear ImGui layout persistence from `imgui.ini` in the working directory to `gui.ini` beside the executable.
+- Added a `+` action next to the target branch selector for creating and selecting a new target branch.
+- Blocked new target branch creation while unshelved local changes or checked-out active files are present.
+
 0.1.25
 - Restored remote branch discovery without exposing the `origin` HEAD pseudo-ref as a selectable branch.
 - Checkout remote-only target branches by creating a local tracking branch automatically.
