@@ -1,6 +1,35 @@
 p4v-git changelog
 ==================
 
+0.1.20
+- Added a Shelve modal for existing shelves with Summary and Description fields.
+- Defaulted the Shelve summary to the previous hard-coded commit message, `Shelve files`.
+- Passed the Shelve modal text into the shelf branch commit message.
+
+0.1.19
+- Fixed title-bar double-click maximize/restore by delaying native drag until the mouse actually moves.
+
+0.1.18
+- Reduced custom title-bar height and window-control size slightly.
+- Improved title-bar double-click handling so maximize/restore does not also start a drag.
+
+0.1.17
+- Reduced custom title-bar height and circular window-control size.
+- Made title-bar dragging easier by starting native drag from a normal click on the title-bar background.
+
+0.1.16
+- Removed duplicate in-panel title headers now that dock tabs provide panel names.
+- Moved custom title-bar window controls to the right side.
+- Enlarged title-bar controls and made the title bar DPI-aware.
+- Versioned the dockspace ID so the content area uses the title-bar inset instead of stale full-height docking state.
+- Switched Windows title-bar dragging to native caption dragging so Aero Snap and OS window docking work.
+
+0.1.15
+- Added a custom dark ImGui style so the app looks less like stock Dear ImGui.
+- Removed native OS window decorations from the GLFW window.
+- Added a custom ImGui title bar with Mac-style circular close, minimize, and maximize controls.
+- Reserved title-bar space above the main dockspace and added custom window drag support.
+
 0.1.14
 - Reworked README features to emphasize Perforce-like workflows backed by Git.
 - Removed the README Notes section so implementation details live in this changelog instead.
