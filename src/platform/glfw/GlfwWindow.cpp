@@ -16,6 +16,7 @@
 #endif
 
 #include <cstdio>
+#include <utility>
 
 namespace p4vgit
 {
@@ -104,6 +105,7 @@ bool GlfwWindow::Initialize(const WindowConfig& config)
     }
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
     m_contentScale = GetPrimaryMonitorScale();
@@ -157,6 +159,55 @@ bool GlfwWindow::ShouldClose() const
 void GlfwWindow::PollEvents()
 {
     glfwPollEvents();
+    UpdateMoveDrag();
+}
+
+void GlfwWindow::RequestClose()
+{
+    glfwSetWindowShouldClose(m_window, GLFW_TRUE);
+}
+
+void GlfwWindow::Minimize()
+{
+    glfwIconifyWindow(m_window);
+}
+
+void GlfwWindow::ToggleMaximize()
+{
+    if (IsMaximized())
+        glfwRestoreWindow(m_window);
+    else
+        glfwMaximizeWindow(m_window);
+}
+
+bool GlfwWindow::IsMaximized() const
+{
+    return glfwGetWindowAttrib(m_window, GLFW_MAXIMIZED) != 0;
+}
+
+void GlfwWindow::StartMoveDrag()
+{
+    if (m_window == nullptr)
+        return;
+
+#ifdef _WIN32
+    HWND handle = glfwGetWin32Window(m_window);
+    if (handle == nullptr)
+        return;
+
+    ReleaseCapture();
+    SendMessageW(handle, WM_NCLBUTTONDOWN, HTCAPTION, 0);
+#else
+    if (IsMaximized())
+        return;
+
+    double cursorX = 0.0;
+    double cursorY = 0.0;
+    glfwGetCursorPos(m_window, &cursorX, &cursorY);
+    m_dragOffsetX = cursorX;
+    m_dragOffsetY = cursorY;
+    m_dragging = true;
+#endif
 }
 
 bool GlfwWindow::IsMinimized() const
@@ -220,5 +271,29 @@ float GlfwWindow::GetPrimaryMonitorScale()
     float y_scale = 1.0f;
     glfwGetMonitorContentScale(monitor, &x_scale, &y_scale);
     return x_scale > y_scale ? x_scale : y_scale;
+}
+
+void GlfwWindow::UpdateMoveDrag()
+{
+    if (!m_dragging || m_window == nullptr)
+        return;
+
+    if (glfwGetMouseButton(m_window, GLFW_MOUSE_BUTTON_LEFT) != GLFW_PRESS)
+    {
+        m_dragging = false;
+        return;
+    }
+
+    int windowX = 0;
+    int windowY = 0;
+    double cursorX = 0.0;
+    double cursorY = 0.0;
+    glfwGetWindowPos(m_window, &windowX, &windowY);
+    glfwGetCursorPos(m_window, &cursorX, &cursorY);
+
+    const int nextX = windowX + static_cast<int>(cursorX - m_dragOffsetX);
+    const int nextY = windowY + static_cast<int>(cursorY - m_dragOffsetY);
+    if (std::pair(nextX, nextY) != std::pair(windowX, windowY))
+        glfwSetWindowPos(m_window, nextX, nextY);
 }
 }

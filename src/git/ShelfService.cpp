@@ -477,9 +477,9 @@ bool ShelfService::CreateShelf(std::string_view shelfName)
     return m_repository->Run("branch " + Quote(branch) + " " + Quote(TargetBranch())).Succeeded();
 }
 
-bool ShelfService::ShelveFiles(std::string_view shelfBranch, const std::vector<std::string>& files)
+bool ShelfService::ShelveFiles(std::string_view shelfBranch, const std::vector<std::string>& files, std::string_view summary, std::string_view description)
 {
-    if (m_repository == nullptr || shelfBranch.empty() || files.empty())
+    if (m_repository == nullptr || shelfBranch.empty() || files.empty() || summary.empty())
         return false;
 
     if (!m_repository->BranchExists(shelfBranch))
@@ -516,7 +516,10 @@ bool ShelfService::ShelveFiles(std::string_view shelfBranch, const std::vector<s
     if (addSucceeded)
     {
         GitRepository shelfWorktree(worktreeRoot);
-        committed = shelfWorktree.Run("commit -m " + Quote("Shelve files")).Succeeded();
+        std::string commitCommand = "commit -m " + Quote(summary);
+        if (!description.empty())
+            commitCommand += " -m " + Quote(description);
+        committed = shelfWorktree.Run(commitCommand).Succeeded();
     }
 
     m_repository->Run("worktree remove --force " + Quote(worktreeRoot.string()));
@@ -817,12 +820,12 @@ std::string ShelfService::EnsureShelfLink(std::string_view shelfBranch)
     return {};
 }
 
-std::string ShelfService::ShelveFilesAndEnsureShelfLink(std::string_view shelfBranch, const std::vector<std::string>& files)
+std::string ShelfService::ShelveFilesAndEnsureShelfLink(std::string_view shelfBranch, const std::vector<std::string>& files, std::string_view summary, std::string_view description)
 {
     if (m_repository == nullptr || shelfBranch.empty())
         return {};
 
-    if (!files.empty() && !ShelveFiles(shelfBranch, files))
+    if (!files.empty() && !ShelveFiles(shelfBranch, files, summary, description))
         return {};
 
     return EnsureShelfLink(shelfBranch);
