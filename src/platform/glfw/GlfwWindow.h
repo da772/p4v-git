@@ -24,6 +24,7 @@ public:
     void ToggleMaximize() override;
     bool IsMaximized() const override;
     void StartMoveDrag() override;
+    void SetTitleBarHitTestRegion(const TitleBarHitTestRegion& region) override;
     bool IsMinimized() const override;
     bool IsFocused() const override;
     void Sleep(int milliseconds) const override;
@@ -33,13 +34,17 @@ public:
 
     const char* const* GetRequiredVulkanInstanceExtensions(uint32_t* count) const override;
     VkSurfaceKHR CreateVulkanSurface(VkInstance instance, const VkAllocationCallbacks* allocator) const override;
+    bool IsPointInTitleBarHitTest(double clientX, double clientY) const;
 
 private:
     static void ErrorCallback(int error, const char* description);
     static float GetPrimaryMonitorScale();
+    void InstallNativeMessageHook();
+    void RemoveNativeMessageHook();
     void UpdateMoveDrag();
 
     GLFWwindow* m_window = nullptr;
+    TitleBarHitTestRegion m_titleBarHitTestRegion;
     float m_contentScale = 1.0f;
     double m_dragOffsetX = 0.0;
     double m_dragOffsetY = 0.0;
