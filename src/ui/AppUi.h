@@ -98,6 +98,7 @@ private:
     static ShelfJobResult RunCreateShelfJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelfName, std::vector<std::string> files);
     static ShelfJobResult RunSelectTargetBranchJob(const std::filesystem::path& repoRoot, std::string targetBranch);
     static ShelfJobResult RunShelveShelfJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelf, std::vector<std::string> files, std::string summary, std::string description);
+    static ShelfJobResult RunShelveAndSubmitShelfJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelf, std::vector<std::string> files, std::string summary, std::string description);
     static ShelfJobResult RunSubmitShelfJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelf, std::vector<std::string> files);
     static ShelfJobResult RunSubmitMainJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::vector<std::string> files, std::string summary, std::string description);
     static ShelfJobResult RunPullMainJob(const std::filesystem::path& repoRoot, std::string targetBranch);
@@ -119,7 +120,7 @@ private:
     void ClearPendingConfirmation();
     void OpenMainSubmitPopup();
     void DrawMainSubmitPopup();
-    void OpenShelvePopup(std::string shelf);
+    void OpenShelvePopup(std::string shelf, bool submitAfterShelve = false);
     void DrawShelvePopup();
     void OpenCreateShelfPopup();
     void DrawCreateShelfPopup();
@@ -166,6 +167,7 @@ private:
     void CreateShelfFromInput();
     void SelectTargetBranch(std::string branch);
     void ShelveShelf(const std::string& shelf);
+    void ShelveAndSubmitShelf(const std::string& shelf);
     void SubmitShelf(const std::string& shelf);
     void SubmitMainFromPopup();
     void PullMain();
@@ -212,6 +214,7 @@ private:
     bool m_openConfirmationPopup = false;
     bool m_openMainSubmitPopup = false;
     bool m_openShelvePopup = false;
+    bool m_shelveSubmitAfter = false;
     bool m_openCreateShelfPopup = false;
     std::string m_mainSubmitError;
     std::string m_shelveError;

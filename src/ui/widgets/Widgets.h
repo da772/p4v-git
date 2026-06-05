@@ -14,6 +14,7 @@ struct TitleBarResult
     bool maximize = false;
     bool close = false;
     bool drag = false;
+    float dragRegionRight = 0.0f;
 };
 
 enum class DockspaceSide

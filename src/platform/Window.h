@@ -21,6 +21,13 @@ struct FramebufferSize
     int height = 0;
 };
 
+struct TitleBarHitTestRegion
+{
+    bool enabled = false;
+    float height = 0.0f;
+    float dragRegionRight = 0.0f;
+};
+
 class Window
 {
 public:
@@ -35,6 +42,7 @@ public:
     virtual void ToggleMaximize() = 0;
     virtual bool IsMaximized() const = 0;
     virtual void StartMoveDrag() = 0;
+    virtual void SetTitleBarHitTestRegion(const TitleBarHitTestRegion& region) = 0;
     virtual bool IsMinimized() const = 0;
     virtual bool IsFocused() const = 0;
     virtual void Sleep(int milliseconds) const = 0;
