@@ -30,6 +30,11 @@ public:
     virtual void Shutdown() = 0;
     virtual bool ShouldClose() const = 0;
     virtual void PollEvents() = 0;
+    virtual void RequestClose() = 0;
+    virtual void Minimize() = 0;
+    virtual void ToggleMaximize() = 0;
+    virtual bool IsMaximized() const = 0;
+    virtual void StartMoveDrag() = 0;
     virtual bool IsMinimized() const = 0;
     virtual bool IsFocused() const = 0;
     virtual void Sleep(int milliseconds) const = 0;
