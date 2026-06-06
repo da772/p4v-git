@@ -171,34 +171,7 @@ RepositorySnapshot AppUi::LoadRepositorySnapshot(const std::filesystem::path& se
     return snapshot;
 }
 
-ShelfJobResult AppUi::RunCreateShelfJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelfName, std::vector<std::string> files)
-{
-    GitRepository repository(repoRoot);
-    ShelfService shelfService;
-    shelfService.SetRepository(&repository);
-    shelfService.SetTargetBranch(std::move(targetBranch));
-
-    ShelfJobResult result;
-    result.shelf = shelfService.MakeShelfBranch(shelfName);
-    result.files = std::move(files);
-    result.succeeded = shelfService.CreateShelf(shelfName);
-    result.selectShelf = result.succeeded;
-    result.addFilesState = result.succeeded && !result.files.empty();
-    return result;
-}
-
-ShelfJobResult AppUi::RunCreateTargetBranchJob(const std::filesystem::path& repoRoot, std::string baseBranch, std::string newBranch)
-{
-    GitRepository repository(repoRoot);
-
-    ShelfJobResult result;
-    result.shelf = std::move(newBranch);
-    result.succeeded = repository.CreateAndCheckoutBranch(result.shelf, baseBranch);
-    result.selectTargetBranch = result.succeeded;
-    return result;
-}
-
-ShelfJobResult AppUi::RunSelectTargetBranchJob(const std::filesystem::path& repoRoot, std::string targetBranch)
+ShelfJobResult AppUi::RunCreateShelfJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& shelfName, const std::vector<std::string>& files)
 {
     GitRepository repository(repoRoot);
     ShelfService shelfService;
@@ -206,7 +179,34 @@ ShelfJobResult AppUi::RunSelectTargetBranchJob(const std::filesystem::path& repo
     shelfService.SetTargetBranch(targetBranch);
 
     ShelfJobResult result;
-    result.shelf = std::move(targetBranch);
+    result.shelf = shelfService.MakeShelfBranch(shelfName);
+    result.files = files;
+    result.succeeded = shelfService.CreateShelf(shelfName);
+    result.selectShelf = result.succeeded;
+    result.addFilesState = result.succeeded && !result.files.empty();
+    return result;
+}
+
+ShelfJobResult AppUi::RunCreateTargetBranchJob(const std::filesystem::path& repoRoot, const std::string& baseBranch, const std::string& newBranch)
+{
+    GitRepository repository(repoRoot);
+
+    ShelfJobResult result;
+    result.shelf = newBranch;
+    result.succeeded = repository.CreateAndCheckoutBranch(result.shelf, baseBranch);
+    result.selectTargetBranch = result.succeeded;
+    return result;
+}
+
+ShelfJobResult AppUi::RunSelectTargetBranchJob(const std::filesystem::path& repoRoot, const std::string& targetBranch)
+{
+    GitRepository repository(repoRoot);
+    ShelfService shelfService;
+    shelfService.SetRepository(&repository);
+    shelfService.SetTargetBranch(targetBranch);
+
+    ShelfJobResult result;
+    result.shelf = targetBranch;
     result.succeeded = repository.CheckoutBranch(result.shelf);
     if (result.succeeded)
         result.succeeded = shelfService.PullMain();
@@ -214,29 +214,29 @@ ShelfJobResult AppUi::RunSelectTargetBranchJob(const std::filesystem::path& repo
     return result;
 }
 
-ShelfJobResult AppUi::RunShelveShelfJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelf, std::vector<std::string> files, std::string summary, std::string description)
+ShelfJobResult AppUi::RunShelveShelfJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& shelf, const std::vector<std::string>& files, const std::string& summary, const std::string& description)
 {
     GitRepository repository(repoRoot);
     ShelfService shelfService;
     shelfService.SetRepository(&repository);
-    shelfService.SetTargetBranch(std::move(targetBranch));
+    shelfService.SetTargetBranch(targetBranch);
 
     ShelfJobResult result;
-    result.shelf = std::move(shelf);
+    result.shelf = shelf;
     result.shelfUrl = shelfService.ShelveFilesAndEnsureShelfLink(result.shelf, files, summary, description);
     result.succeeded = !result.shelfUrl.empty();
     return result;
 }
 
-ShelfJobResult AppUi::RunShelveAndSubmitShelfJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelf, std::vector<std::string> files, std::string summary, std::string description)
+ShelfJobResult AppUi::RunShelveAndSubmitShelfJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& shelf, const std::vector<std::string>& files, const std::string& summary, const std::string& description)
 {
     GitRepository repository(repoRoot);
     ShelfService shelfService;
     shelfService.SetRepository(&repository);
-    shelfService.SetTargetBranch(std::move(targetBranch));
+    shelfService.SetTargetBranch(targetBranch);
 
     ShelfJobResult result;
-    result.shelf = std::move(shelf);
+    result.shelf = shelf;
     result.files = files;
     result.shelfUrl = shelfService.ShelveFilesAndEnsureShelfLink(result.shelf, files, summary, description);
     if (result.shelfUrl.empty())
@@ -250,16 +250,16 @@ ShelfJobResult AppUi::RunShelveAndSubmitShelfJob(const std::filesystem::path& re
     return result;
 }
 
-ShelfJobResult AppUi::RunSubmitShelfJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelf, std::vector<std::string> files)
+ShelfJobResult AppUi::RunSubmitShelfJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& shelf, const std::vector<std::string>& files)
 {
     GitRepository repository(repoRoot);
     ShelfService shelfService;
     shelfService.SetRepository(&repository);
-    shelfService.SetTargetBranch(std::move(targetBranch));
+    shelfService.SetTargetBranch(targetBranch);
 
     ShelfJobResult result;
-    result.shelf = std::move(shelf);
-    result.files = std::move(files);
+    result.shelf = shelf;
+    result.files = files;
     result.submit = shelfService.SubmitShelf(result.shelf, result.files);
     result.shelfUrl = result.submit.shelfUrl;
     result.succeeded = result.submit.merged;
@@ -267,7 +267,7 @@ ShelfJobResult AppUi::RunSubmitShelfJob(const std::filesystem::path& repoRoot, s
     return result;
 }
 
-ShelfJobResult AppUi::RunSubmitMainJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::vector<std::string> files, std::string summary, std::string description)
+ShelfJobResult AppUi::RunSubmitMainJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::vector<std::string>& files, const std::string& summary, const std::string& description)
 {
     GitRepository repository(repoRoot);
     ShelfService shelfService;
@@ -275,14 +275,14 @@ ShelfJobResult AppUi::RunSubmitMainJob(const std::filesystem::path& repoRoot, st
     shelfService.SetTargetBranch(targetBranch);
 
     ShelfJobResult result;
-    result.shelf = std::move(targetBranch);
-    result.files = std::move(files);
+    result.shelf = targetBranch;
+    result.files = files;
     result.succeeded = shelfService.SubmitMain(result.files, summary, description);
     result.clearMainActiveFiles = result.succeeded;
     return result;
 }
 
-ShelfJobResult AppUi::RunPullMainJob(const std::filesystem::path& repoRoot, std::string targetBranch)
+ShelfJobResult AppUi::RunPullMainJob(const std::filesystem::path& repoRoot, const std::string& targetBranch)
 {
     GitRepository repository(repoRoot);
     ShelfService shelfService;
@@ -290,49 +290,49 @@ ShelfJobResult AppUi::RunPullMainJob(const std::filesystem::path& repoRoot, std:
     shelfService.SetTargetBranch(targetBranch);
 
     ShelfJobResult result;
-    result.shelf = std::move(targetBranch);
+    result.shelf = targetBranch;
     result.succeeded = shelfService.PullMain();
     return result;
 }
 
-ShelfJobResult AppUi::RunDeleteShelfJob(const std::filesystem::path& repoRoot, std::string shelf)
+ShelfJobResult AppUi::RunDeleteShelfJob(const std::filesystem::path& repoRoot, const std::string& shelf)
 {
     GitRepository repository(repoRoot);
     ShelfService shelfService;
     shelfService.SetRepository(&repository);
 
     ShelfJobResult result;
-    result.shelf = std::move(shelf);
+    result.shelf = shelf;
     result.succeeded = shelfService.DeleteShelf(result.shelf, true);
     result.deleteShelfState = result.succeeded;
     return result;
 }
 
-ShelfJobResult AppUi::RunRevertShelfFileJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelf, std::string file)
+ShelfJobResult AppUi::RunRevertShelfFileJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& shelf, const std::string& file)
 {
     GitRepository repository(repoRoot);
     ShelfService shelfService;
     shelfService.SetRepository(&repository);
-    shelfService.SetTargetBranch(std::move(targetBranch));
+    shelfService.SetTargetBranch(targetBranch);
 
     ShelfJobResult result;
-    result.shelf = std::move(shelf);
-    result.file = std::move(file);
+    result.shelf = shelf;
+    result.file = file;
     result.succeeded = shelfService.RevertFileFromShelf(result.shelf, result.file);
     result.removeShelfFileState = result.succeeded;
     return result;
 }
 
-ShelfJobResult AppUi::RunRevertShelfFilesJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelf, std::vector<std::string> files)
+ShelfJobResult AppUi::RunRevertShelfFilesJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& shelf, const std::vector<std::string>& files)
 {
     GitRepository repository(repoRoot);
     ShelfService shelfService;
     shelfService.SetRepository(&repository);
-    shelfService.SetTargetBranch(std::move(targetBranch));
+    shelfService.SetTargetBranch(targetBranch);
 
     ShelfJobResult result;
-    result.shelf = std::move(shelf);
-    result.files = std::move(files);
+    result.shelf = shelf;
+    result.files = files;
     result.succeeded = true;
     for (const std::string& file : result.files)
         result.succeeded = shelfService.RevertFileFromShelf(result.shelf, file) && result.succeeded;
@@ -340,29 +340,29 @@ ShelfJobResult AppUi::RunRevertShelfFilesJob(const std::filesystem::path& repoRo
     return result;
 }
 
-ShelfJobResult AppUi::RunRevertActiveFileJob(const std::filesystem::path& repoRoot, std::string shelf, std::string file)
+ShelfJobResult AppUi::RunRevertActiveFileJob(const std::filesystem::path& repoRoot, const std::string& shelf, const std::string& file)
 {
     GitRepository repository(repoRoot);
     ShelfService shelfService;
     shelfService.SetRepository(&repository);
 
     ShelfJobResult result;
-    result.shelf = std::move(shelf);
-    result.file = std::move(file);
+    result.shelf = shelf;
+    result.file = file;
     result.succeeded = shelfService.UndoLocalFileChanges(result.file);
     result.revertActiveFileState = result.succeeded;
     return result;
 }
 
-ShelfJobResult AppUi::RunRevertActiveFilesJob(const std::filesystem::path& repoRoot, std::string shelf, std::vector<std::string> files)
+ShelfJobResult AppUi::RunRevertActiveFilesJob(const std::filesystem::path& repoRoot, const std::string& shelf, const std::vector<std::string>& files)
 {
     GitRepository repository(repoRoot);
     ShelfService shelfService;
     shelfService.SetRepository(&repository);
 
     ShelfJobResult result;
-    result.shelf = std::move(shelf);
-    result.files = std::move(files);
+    result.shelf = shelf;
+    result.files = files;
     result.succeeded = true;
     for (const std::string& file : result.files)
         result.succeeded = shelfService.UndoLocalFileChanges(file) && result.succeeded;
@@ -370,29 +370,29 @@ ShelfJobResult AppUi::RunRevertActiveFilesJob(const std::filesystem::path& repoR
     return result;
 }
 
-ShelfJobResult AppUi::RunRestoreShelfFileJob(const std::filesystem::path& repoRoot, std::string shelf, std::string file)
+ShelfJobResult AppUi::RunRestoreShelfFileJob(const std::filesystem::path& repoRoot, const std::string& shelf, const std::string& file)
 {
     GitRepository repository(repoRoot);
     ShelfService shelfService;
     shelfService.SetRepository(&repository);
 
     ShelfJobResult result;
-    result.shelf = std::move(shelf);
-    result.file = std::move(file);
+    result.shelf = shelf;
+    result.file = file;
     result.succeeded = shelfService.RestoreFileFromShelfToWorkingTree(result.shelf, result.file);
     result.addFileState = result.succeeded;
     return result;
 }
 
-ShelfJobResult AppUi::RunRestoreShelfFilesJob(const std::filesystem::path& repoRoot, std::string shelf, std::vector<std::string> files)
+ShelfJobResult AppUi::RunRestoreShelfFilesJob(const std::filesystem::path& repoRoot, const std::string& shelf, const std::vector<std::string>& files)
 {
     GitRepository repository(repoRoot);
     ShelfService shelfService;
     shelfService.SetRepository(&repository);
 
     ShelfJobResult result;
-    result.shelf = std::move(shelf);
-    result.files = std::move(files);
+    result.shelf = shelf;
+    result.files = files;
     result.succeeded = true;
     for (const std::string& file : result.files)
         result.succeeded = shelfService.RestoreFileFromShelfToWorkingTree(result.shelf, file) && result.succeeded;
@@ -400,12 +400,12 @@ ShelfJobResult AppUi::RunRestoreShelfFilesJob(const std::filesystem::path& repoR
     return result;
 }
 
-void AppUi::RunOpenFileDiffJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string file)
+void AppUi::RunOpenFileDiffJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& file)
 {
     GitRepository repository(repoRoot);
     ShelfService shelfService;
     shelfService.SetRepository(&repository);
-    shelfService.SetTargetBranch(std::move(targetBranch));
+    shelfService.SetTargetBranch(targetBranch);
     shelfService.OpenFileDiff(file);
 }
 
@@ -662,20 +662,20 @@ std::string AppUi::ShelfBusyLabel(std::string_view shelf) const
     return {};
 }
 
-void AppUi::RequestConfirmation(ConfirmationAction action, std::string shelf, std::string file)
+void AppUi::RequestConfirmation(ConfirmationAction action, std::string_view shelf, std::string_view file)
 {
     m_confirmationAction = action;
-    m_confirmationShelf = std::move(shelf);
-    m_confirmationFile = std::move(file);
+    m_confirmationShelf = shelf;
+    m_confirmationFile = file;
     m_confirmationFiles = { m_confirmationFile };
     m_openConfirmationPopup = true;
 }
 
-void AppUi::RequestConfirmation(ConfirmationAction action, std::string shelf, std::vector<std::string> files)
+void AppUi::RequestConfirmation(ConfirmationAction action, std::string_view shelf, const std::vector<std::string>& files)
 {
     m_confirmationAction = action;
-    m_confirmationShelf = std::move(shelf);
-    m_confirmationFiles = std::move(files);
+    m_confirmationShelf = shelf;
+    m_confirmationFiles = files;
     m_confirmationFile = m_confirmationFiles.empty() ? std::string() : m_confirmationFiles.front();
     m_openConfirmationPopup = true;
 }
@@ -803,9 +803,9 @@ void AppUi::DrawMainSubmitPopup()
     ui::widgets::EndModal();
 }
 
-void AppUi::OpenShelvePopup(std::string shelf, bool submitAfterShelve)
+void AppUi::OpenShelvePopup(std::string_view shelf, bool submitAfterShelve)
 {
-    m_shelveShelf = std::move(shelf);
+    m_shelveShelf = shelf;
     m_shelveSubmitAfter = submitAfterShelve;
     std::fill(m_shelveSummaryInput.begin(), m_shelveSummaryInput.end(), '\0');
     std::fill(m_shelveDescriptionInput.begin(), m_shelveDescriptionInput.end(), '\0');
@@ -2019,8 +2019,8 @@ void AppUi::CreateShelfFromInput()
     if (!m_selectedActiveShelf.empty())
         files = m_selectedActiveFiles;
 
-    StartShelfJob(targetBranch, "Creating shelf", std::async(std::launch::async, [repoRoot, targetBranch, shelfName, files = std::move(files)]() mutable {
-        return RunCreateShelfJob(repoRoot, targetBranch, shelfName, std::move(files));
+    StartShelfJob(targetBranch, "Creating shelf", std::async(std::launch::async, [repoRoot, targetBranch, shelfName, files = std::move(files)]() {
+        return RunCreateShelfJob(repoRoot, targetBranch, shelfName, files);
     }));
     std::fill(m_newShelfNameInput.begin(), m_newShelfNameInput.end(), '\0');
 }
@@ -2054,7 +2054,7 @@ void AppUi::CreateTargetBranchFromInput()
     std::fill(m_newBranchNameInput.begin(), m_newBranchNameInput.end(), '\0');
 }
 
-void AppUi::SelectTargetBranch(std::string branch)
+void AppUi::SelectTargetBranch(const std::string& branch)
 {
     if (!m_repository.has_value() || branch.empty() || branch == m_targetBranch || IsShelfBusy(m_targetBranch))
         return;
@@ -2158,8 +2158,8 @@ void AppUi::SubmitMainFromPopup()
 
     const std::filesystem::path repoRoot = m_sourcePath;
     const std::string targetBranch = m_targetBranch;
-    StartShelfJob(targetBranch, "Submitting", std::async(std::launch::async, [repoRoot, targetBranch, files = std::move(files), summary, description]() mutable {
-        return RunSubmitMainJob(repoRoot, targetBranch, std::move(files), summary, description);
+    StartShelfJob(targetBranch, "Submitting", std::async(std::launch::async, [repoRoot, targetBranch, files = std::move(files), summary, description]() {
+        return RunSubmitMainJob(repoRoot, targetBranch, files, summary, description);
     }));
 }
 

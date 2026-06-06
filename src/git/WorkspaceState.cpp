@@ -68,14 +68,14 @@ bool WorkspaceState::Save() const
     return true;
 }
 
-void WorkspaceState::SetActiveShelf(std::string shelf)
+void WorkspaceState::SetActiveShelf(std::string_view shelf)
 {
-    m_activeShelf = std::move(shelf);
+    m_activeShelf = shelf;
 }
 
-void WorkspaceState::SetTargetBranch(std::string branch)
+void WorkspaceState::SetTargetBranch(std::string_view branch)
 {
-    m_targetBranch = branch.empty() ? "main" : std::move(branch);
+    m_targetBranch = branch.empty() ? "main" : std::string(branch);
 }
 
 const std::vector<std::string>& WorkspaceState::CheckedOutFiles() const

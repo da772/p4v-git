@@ -20,9 +20,9 @@ public:
     bool Save() const;
 
     const std::string& ActiveShelf() const { return m_activeShelf; }
-    void SetActiveShelf(std::string shelf);
+    void SetActiveShelf(std::string_view shelf);
     const std::string& TargetBranch() const { return m_targetBranch; }
-    void SetTargetBranch(std::string branch);
+    void SetTargetBranch(std::string_view branch);
 
     const std::vector<ShelfWorkspaceFiles>& Shelves() const { return m_shelfFiles; }
     const std::vector<std::string>& CheckedOutFiles() const;
