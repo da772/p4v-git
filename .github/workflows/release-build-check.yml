@@ -1,0 +1,88 @@
+name: Release Build Status
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  linux-release-build:
+    name: Linux Release Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang \
+            ninja-build \
+            pkg-config \
+            libvulkan-dev \
+            xorg-dev \
+            libwayland-dev \
+            wayland-protocols \
+            libxkbcommon-dev
+
+      - name: Configure
+        run: >
+          cmake -S . -B build/linux-release
+          -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_C_COMPILER=clang
+          -DCMAKE_CXX_COMPILER=clang++
+
+      - name: Build
+        run: cmake --build build/linux-release --parallel
+
+  windows-release-build:
+    name: Windows Release Build
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Vulkan SDK
+        uses: humbletim/setup-vulkan-sdk@v1.2.1
+        with:
+          vulkan-query-version: latest
+          vulkan-components: Vulkan-Headers, Vulkan-Loader
+          vulkan-use-cache: true
+
+      - name: Configure
+        run: cmake -S . -B build/windows-release -G "Visual Studio 17 2022" -A x64
+
+      - name: Build
+        run: cmake --build build/windows-release --config Release --parallel
+
+  release-builds-successful:
+    name: Release Builds Successful
+    runs-on: ubuntu-latest
+    needs:
+      - linux-release-build
+      - windows-release-build
+    if: always()
+
+    steps:
+      - name: Require successful release builds
+        env:
+          LINUX_RESULT: ${{ needs.linux-release-build.result }}
+          WINDOWS_RESULT: ${{ needs.windows-release-build.result }}
+        run: |
+          if [ "$LINUX_RESULT" != "success" ] || [ "$WINDOWS_RESULT" != "success" ]; then
+            echo "Linux Release Build result: $LINUX_RESULT"
+            echo "Windows Release Build result: $WINDOWS_RESULT"
+            exit 1
+          fi
+
+          echo "Linux and Windows Release builds passed."
