@@ -1,6 +1,11 @@
 p4v-git changelog
 ==================
 
+0.2.2
+- Changed shelf Submit with active files to open the Shelve-and-Submit flow so unshelved shelf changes are committed before merge.
+- Allowed reshelve-before-submit to continue when the active files have no new content to commit.
+- Fixed active-change multi-select Diff so all selected files open diffs instead of only the right-clicked file.
+
 0.2.1
 - Added a File History tab in File Changes with per-file history loaded from `git log --follow`.
 - Added File History context actions from Workspace Explorer, active change lists, and committed shelf file lists.
