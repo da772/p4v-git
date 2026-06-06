@@ -586,10 +586,29 @@ bool ShelfService::UndoLocalFileChanges(std::string_view file)
         return false;
 
     const std::string fileText = std::string(file);
-    if (m_repository->Run("restore --staged --worktree -- " + Quote(fileText)).Succeeded())
-        return true;
+    const bool trackedInHead = m_repository->Run("cat-file -e " + Quote("HEAD:" + fileText), false).Succeeded();
+    if (trackedInHead)
+    {
+        if (!m_repository->Run("restore --staged --worktree -- " + Quote(fileText)).Succeeded())
+            return false;
+    }
+    else
+    {
+        m_repository->Run("rm -f --cached -- " + Quote(fileText), false);
 
-    return m_repository->Run("clean -f -- " + Quote(fileText)).Succeeded();
+        std::error_code error;
+        const std::filesystem::path filePath = m_repository->Root() / fileText;
+        if (std::filesystem::is_directory(filePath, error))
+            std::filesystem::remove_all(filePath, error);
+        else
+            std::filesystem::remove(filePath, error);
+        if (error)
+            return false;
+
+        m_repository->Run("clean -fd -- " + Quote(fileText), false);
+    }
+
+    return m_repository->Run("status --porcelain=v1 -uall -- " + Quote(fileText), false).output.empty();
 }
 
 bool ShelfService::OpenFileDiff(std::string_view file) const
