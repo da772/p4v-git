@@ -188,6 +188,7 @@ private:
     void RevertCheckedOutFiles(const std::string& shelf, const std::vector<std::string>& files);
     void RevertCheckedOutFilesConfirmed(const std::string& shelf, const std::vector<std::string>& files);
     void OpenFileDiff(const std::string& file);
+    void OpenFileDiffs(const std::vector<std::string>& files);
     void OpenFileHistory(const std::string& file, std::string_view shelf = {});
     void OpenFileHistoryCurrentDiff(const GitFileHistoryEntry& entry);
     void OpenFileHistoryVersionDiff(const std::string& file, const std::string& leftCommit, const std::string& rightCommit);
