@@ -669,6 +669,121 @@ bool ShelfService::OpenFileDiff(std::string_view file) const
     return result.Succeeded();
 }
 
+bool ShelfService::OpenFileVersionDiff(std::string_view file, std::string_view leftCommit, std::string_view rightCommit) const
+{
+    if (m_repository == nullptr || file.empty() || leftCommit.empty() || rightCommit.empty())
+        return false;
+
+    const std::string fileText = std::string(file);
+    const std::string leftCommitText = std::string(leftCommit);
+    const std::string rightCommitText = std::string(rightCommit);
+    const auto timestamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    const std::filesystem::path diffDirectory = m_repository->GitDir(false) / "p4v-git" / "diffs";
+    std::error_code error;
+    std::filesystem::create_directories(diffDirectory, error);
+    if (error)
+    {
+        std::cout << "Cannot open history diff: failed to create temp diff directory.\n";
+        return false;
+    }
+
+    const std::string safeName = std::to_string(timestamp) + "_" + SafeFileName(fileText);
+    const std::filesystem::path leftPath = diffDirectory / (SafeFileName(leftCommitText) + "_" + safeName);
+    const std::filesystem::path rightPath = diffDirectory / (SafeFileName(rightCommitText) + "_" + safeName);
+
+    const GitCommandResult leftResult = m_repository->Run("show " + Quote(leftCommitText + ":" + fileText), false);
+    const GitCommandResult rightResult = m_repository->Run("show " + Quote(rightCommitText + ":" + fileText), false);
+    {
+        std::ofstream leftFile(leftPath, std::ios::binary | std::ios::trunc);
+        if (!leftFile.is_open())
+        {
+            std::cout << "Cannot open history diff: failed to write left temp file.\n";
+            return false;
+        }
+        if (leftResult.Succeeded())
+            leftFile << leftResult.output;
+    }
+    {
+        std::ofstream rightFile(rightPath, std::ios::binary | std::ios::trunc);
+        if (!rightFile.is_open())
+        {
+            std::cout << "Cannot open history diff: failed to write right temp file.\n";
+            return false;
+        }
+        if (rightResult.Succeeded())
+            rightFile << rightResult.output;
+    }
+
+    const GitCommandResult result = RunExternalCommand(
+        "Opening history diff: VS Code",
+        "code --reuse-window --diff " + ShellQuote(leftPath.string()) + " " + ShellQuote(rightPath.string()) + " 2>&1",
+        true,
+        true);
+
+    if (!result.Succeeded())
+        std::cout << "Cannot open VS Code diff. Make sure the `code` command is available on PATH.\n";
+
+    return result.Succeeded();
+}
+
+bool ShelfService::OpenFileVersionToWorkingDiff(std::string_view file, std::string_view commit) const
+{
+    if (m_repository == nullptr || file.empty() || commit.empty())
+        return false;
+
+    const std::string fileText = std::string(file);
+    const std::string commitText = std::string(commit);
+    const auto timestamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    const std::filesystem::path diffDirectory = m_repository->GitDir(false) / "p4v-git" / "diffs";
+    std::error_code error;
+    std::filesystem::create_directories(diffDirectory, error);
+    if (error)
+    {
+        std::cout << "Cannot open history diff: failed to create temp diff directory.\n";
+        return false;
+    }
+
+    const std::string safeName = SafeFileName(commitText) + "_" + std::to_string(timestamp) + "_" + SafeFileName(fileText);
+    const std::filesystem::path versionPath = diffDirectory / ("history_" + safeName);
+    const std::filesystem::path workingFallbackPath = diffDirectory / ("working_" + safeName);
+    const std::filesystem::path workingPath = m_repository->Root() / fileText;
+
+    const GitCommandResult versionResult = m_repository->Run("show " + Quote(commitText + ":" + fileText), false);
+    {
+        std::ofstream versionFile(versionPath, std::ios::binary | std::ios::trunc);
+        if (!versionFile.is_open())
+        {
+            std::cout << "Cannot open history diff: failed to write history temp file.\n";
+            return false;
+        }
+        if (versionResult.Succeeded())
+            versionFile << versionResult.output;
+    }
+
+    std::filesystem::path rightPath = workingPath;
+    if (!std::filesystem::exists(workingPath, error))
+    {
+        std::ofstream workingFile(workingFallbackPath, std::ios::binary | std::ios::trunc);
+        if (!workingFile.is_open())
+        {
+            std::cout << "Cannot open history diff: failed to write working temp file.\n";
+            return false;
+        }
+        rightPath = workingFallbackPath;
+    }
+
+    const GitCommandResult result = RunExternalCommand(
+        "Opening history diff: VS Code",
+        "code --reuse-window --diff " + ShellQuote(versionPath.string()) + " " + ShellQuote(rightPath.string()) + " 2>&1",
+        true,
+        true);
+
+    if (!result.Succeeded())
+        std::cout << "Cannot open VS Code diff. Make sure the `code` command is available on PATH.\n";
+
+    return result.Succeeded();
+}
+
 bool ShelfService::SubmitMain(const std::vector<std::string>& files, std::string_view summary, std::string_view description)
 {
     if (m_repository == nullptr || files.empty() || summary.empty())

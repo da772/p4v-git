@@ -76,11 +76,19 @@ struct ShelfJob
     std::future<ShelfJobResult> future;
 };
 
+struct FileHistoryResult
+{
+    std::string file;
+    std::vector<GitFileHistoryEntry> entries;
+    bool succeeded = false;
+};
+
 enum class ConfirmationAction
 {
     None,
     RevertActiveFile,
     RestoreShelfFile,
+    RestoreHistoryVersion,
 };
 
 class AppUi
@@ -111,6 +119,10 @@ private:
     static ShelfJobResult RunRestoreShelfFileJob(const std::filesystem::path& repoRoot, const std::string& shelf, const std::string& file);
     static ShelfJobResult RunRestoreShelfFilesJob(const std::filesystem::path& repoRoot, const std::string& shelf, const std::vector<std::string>& files);
     static void RunOpenFileDiffJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& file);
+    static void RunOpenFileHistoryCurrentDiffJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& file, const std::string& commit);
+    static void RunOpenFileHistoryVersionDiffJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& file, const std::string& leftCommit, const std::string& rightCommit);
+    static FileHistoryResult RunLoadFileHistoryJob(const std::filesystem::path& repoRoot, const std::string& file);
+    static ShelfJobResult RunRestoreFileHistoryVersionJob(const std::filesystem::path& repoRoot, const std::string& shelf, const std::string& file, const std::string& commit);
 
     void PollAsyncOperations();
     void ApplyRepositorySnapshot(const RepositorySnapshot& snapshot);
@@ -123,6 +135,7 @@ private:
     void DrawConfirmationPopup();
     void ConfirmPendingAction();
     void ClearPendingConfirmation();
+    void RequestHistoryVersionConfirmation(std::string_view file, std::string_view commit);
     void OpenMainSubmitPopup();
     void DrawMainSubmitPopup();
     void OpenShelvePopup(std::string_view shelf, bool submitAfterShelve = false);
@@ -134,6 +147,7 @@ private:
     void DrawAppTitleBar();
     void DrawWorkspaceExplorer();
     void DrawFileChanges();
+    void DrawFileHistory();
     void DrawLog();
     void UseSourcePath(const std::filesystem::path& path);
     void DrawDirectory(const std::filesystem::path& path, int depth);
@@ -174,6 +188,11 @@ private:
     void RevertCheckedOutFiles(const std::string& shelf, const std::vector<std::string>& files);
     void RevertCheckedOutFilesConfirmed(const std::string& shelf, const std::vector<std::string>& files);
     void OpenFileDiff(const std::string& file);
+    void OpenFileHistory(const std::string& file, std::string_view shelf = {});
+    void OpenFileHistoryCurrentDiff(const GitFileHistoryEntry& entry);
+    void OpenFileHistoryVersionDiff(const std::string& file, const std::string& leftCommit, const std::string& rightCommit);
+    void RestoreFileHistoryVersion(const std::string& file, const std::string& commit);
+    void OpenFileHistoryChange(const GitFileHistoryEntry& entry);
     void RevertShelfFile(const std::string& shelf, const std::string& file);
     void RevertShelfFiles(const std::string& shelf, const std::vector<std::string>& files);
     void RestoreShelfFile(const std::string& shelf, const std::string& file);
@@ -221,6 +240,7 @@ private:
     std::chrono::steady_clock::time_point m_lastRefreshTime = {};
     std::optional<std::future<RepositorySnapshot>> m_repositoryLoadFuture;
     std::optional<std::future<RepositorySnapshot>> m_refreshFuture;
+    std::optional<std::future<FileHistoryResult>> m_fileHistoryFuture;
     std::vector<ShelfJob> m_shelfJobs;
     uint64_t m_refreshGeneration = 0;
     uint64_t m_gitMutationGeneration = 0;
@@ -228,6 +248,7 @@ private:
     ConfirmationAction m_confirmationAction = ConfirmationAction::None;
     std::string m_confirmationShelf;
     std::string m_confirmationFile;
+    std::string m_confirmationCommit;
     std::vector<std::string> m_confirmationFiles;
     bool m_openConfirmationPopup = false;
     bool m_openMainSubmitPopup = false;
@@ -248,6 +269,11 @@ private:
     std::vector<std::string> m_selectedShelfFiles;
     size_t m_lastSelectedShelfFileIndex = 0;
     bool m_hasLastSelectedShelfFileIndex = false;
+    std::string m_fileHistoryFile;
+    std::string m_fileHistoryShelf;
+    std::vector<GitFileHistoryEntry> m_fileHistoryEntries;
+    std::string m_fileHistoryError;
+    bool m_selectFileHistoryTab = false;
     bool m_logAutoScroll = true;
 };
 }
