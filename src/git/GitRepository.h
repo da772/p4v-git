@@ -21,6 +21,16 @@ struct GitStatusEntry
     std::string status;
 };
 
+struct GitFileHistoryEntry
+{
+    std::string commit;
+    std::string shortCommit;
+    std::string author;
+    std::string date;
+    std::string summary;
+    std::string url;
+};
+
 class GitRepository
 {
 public:
@@ -40,9 +50,12 @@ public:
     std::filesystem::path GitDir(bool logCommand = true) const;
     std::vector<std::string> LocalBranches(bool logCommand = true) const;
     std::vector<GitStatusEntry> Status(bool logCommand = true) const;
+    std::vector<GitFileHistoryEntry> FileHistory(std::string_view file, bool logCommand = true) const;
+    std::string GitHubCommitUrl(std::string_view commit, bool logCommand = true) const;
     bool BranchExists(std::string_view branch, bool logCommand = true) const;
     bool CheckoutBranch(std::string_view branch);
     bool CreateAndCheckoutBranch(std::string_view branch, std::string_view startPoint);
+    bool CheckoutFileVersion(std::string_view commit, std::string_view file);
 
 private:
     static std::string Trim(std::string text);
