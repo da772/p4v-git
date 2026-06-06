@@ -239,7 +239,7 @@ std::vector<GitFileHistoryEntry> GitRepository::FileHistory(std::string_view fil
     const std::string fileText(file);
     const std::string commitUrlPrefix = GitHubCommitUrl("", false);
     const std::string format = "%H%x1f%h%x1f%an%x1f%ad%x1f%s%x1e";
-    const GitCommandResult result = Run("log --follow --date=short --pretty=format:" + Quote(format) + " -- " + Quote(fileText), logCommand);
+    const GitCommandResult result = Run("log --follow --date=short --pretty=format:" + Quote(std::string_view(format)) + " -- " + Quote(std::string_view(fileText)), logCommand);
     if (!result.Succeeded())
         return entries;
 
