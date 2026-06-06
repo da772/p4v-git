@@ -93,7 +93,7 @@ static std::string SafeFileName(std::string_view text)
     return safe.empty() ? "file" : safe;
 }
 
-static GitCommandResult RunExternalCommand(std::string_view label, const std::string& command, bool logOutput = true, bool logCommand = true)
+static GitCommandResult RunExternalCommand(std::string_view label, std::string_view command, bool logOutput = true, bool logCommand = true)
 {
     if (logCommand)
         std::cout << label << '\n';
@@ -377,9 +377,9 @@ void ShelfService::SetRepository(GitRepository* repository)
     m_repository = repository;
 }
 
-void ShelfService::SetTargetBranch(std::string branch)
+void ShelfService::SetTargetBranch(std::string_view branch)
 {
-    m_targetBranch = branch.empty() ? "main" : std::move(branch);
+    m_targetBranch = branch.empty() ? "main" : std::string(branch);
 }
 
 std::string ShelfService::UserPrefix() const
