@@ -1,6 +1,13 @@
 p4v-git changelog
 ==================
 
+0.1.28
+- Added a Linux Clang/Ninja CMake preset with a parallel build preset.
+- Kept refreshed Git status files in their assigned shelf instead of moving shelf-owned files back to Main.
+- Fixed active and committed shelf multi-file restore/revert flows, including immediate UI cleanup after revert.
+- Preserved NUL-separated Git status output on Unix process reads so `git status -z` parses correctly.
+- Reduced unnecessary string and vector parameter copies in internal UI job, workspace state, and shelf service paths.
+
 0.1.27
 - Fixed the target branch `+` button layout so it stays visible and clickable beside the branch selector.
 - Added reusable UI width helpers for constraining inline controls.
