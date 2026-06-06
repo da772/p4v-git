@@ -1,6 +1,11 @@
 p4v-git changelog
 ==================
 
+0.2.0
+- Added a README application screenshot.
+- Expanded README prerequisites with required command-line tools, including `git` and `curl`.
+- Documented Linux, Windows, and macOS build dependencies more explicitly.
+
 0.1.28
 - Added a Linux Clang/Ninja CMake preset with a parallel build preset.
 - Kept refreshed Git status files in their assigned shelf instead of moving shelf-owned files back to Main.
