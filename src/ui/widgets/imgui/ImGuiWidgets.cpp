@@ -390,6 +390,29 @@ void Separator()
     ImGui::Separator();
 }
 
+bool BeginTabBar(std::string_view id)
+{
+    const std::string idText = ToString(id);
+    return ImGui::BeginTabBar(idText.c_str());
+}
+
+void EndTabBar()
+{
+    ImGui::EndTabBar();
+}
+
+bool BeginTabItem(std::string_view label, bool selected)
+{
+    const std::string labelText = ToString(label);
+    const ImGuiTabItemFlags flags = selected ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+    return ImGui::BeginTabItem(labelText.c_str(), nullptr, flags);
+}
+
+void EndTabItem()
+{
+    ImGui::EndTabItem();
+}
+
 bool BeginTreeNode(std::string_view label, bool autoOpen)
 {
     const std::string labelText = ToString(label);

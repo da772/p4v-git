@@ -8,6 +8,76 @@
 
 namespace p4vgit
 {
+namespace
+{
+struct GitHubRepositoryInfo
+{
+    std::string owner;
+    std::string repository;
+};
+
+static std::string TrimText(std::string text)
+{
+    while (!text.empty() && (text.back() == '\n' || text.back() == '\r' || text.back() == ' ' || text.back() == '\t'))
+        text.pop_back();
+
+    size_t start = 0;
+    while (start < text.size() && (text[start] == ' ' || text[start] == '\t'))
+        ++start;
+
+    return text.substr(start);
+}
+
+static std::optional<GitHubRepositoryInfo> ParseGitHubRemote(std::string remoteUrl)
+{
+    remoteUrl = TrimText(std::move(remoteUrl));
+    if (remoteUrl.ends_with(".git"))
+        remoteUrl.resize(remoteUrl.size() - 4);
+
+    const std::string httpsPrefix = "https://github.com/";
+    const std::string sshPrefix = "git@github.com:";
+    const std::string sshUrlPrefix = "ssh://git@github.com/";
+
+    if (remoteUrl.rfind(httpsPrefix, 0) == 0)
+        remoteUrl = remoteUrl.substr(httpsPrefix.size());
+    else if (remoteUrl.rfind(sshPrefix, 0) == 0)
+        remoteUrl = remoteUrl.substr(sshPrefix.size());
+    else if (remoteUrl.rfind(sshUrlPrefix, 0) == 0)
+        remoteUrl = remoteUrl.substr(sshUrlPrefix.size());
+    else
+        return std::nullopt;
+
+    const size_t separator = remoteUrl.find('/');
+    if (separator == std::string::npos || separator == 0 || separator + 1 >= remoteUrl.size())
+        return std::nullopt;
+
+    return GitHubRepositoryInfo{
+        remoteUrl.substr(0, separator),
+        remoteUrl.substr(separator + 1),
+    };
+}
+
+static std::vector<std::string_view> SplitFields(std::string_view text, char separator)
+{
+    std::vector<std::string_view> fields;
+    size_t cursor = 0;
+    while (cursor <= text.size())
+    {
+        const size_t next = text.find(separator, cursor);
+        if (next == std::string_view::npos)
+        {
+            fields.push_back(text.substr(cursor));
+            break;
+        }
+
+        fields.push_back(text.substr(cursor, next - cursor));
+        cursor = next + 1;
+    }
+
+    return fields;
+}
+}
+
 GitRepository::GitRepository(std::filesystem::path root)
     : m_root(std::move(root))
 {
@@ -160,6 +230,60 @@ std::vector<GitStatusEntry> GitRepository::Status(bool logCommand) const
     return entries;
 }
 
+std::vector<GitFileHistoryEntry> GitRepository::FileHistory(std::string_view file, bool logCommand) const
+{
+    std::vector<GitFileHistoryEntry> entries;
+    if (file.empty())
+        return entries;
+
+    const std::string fileText(file);
+    const std::string commitUrlPrefix = GitHubCommitUrl("", false);
+    const std::string format = "%H%x1f%h%x1f%an%x1f%ad%x1f%s%x1e";
+    const GitCommandResult result = Run("log --follow --date=short --pretty=format:" + Quote(format) + " -- " + Quote(fileText), logCommand);
+    if (!result.Succeeded())
+        return entries;
+
+    size_t cursor = 0;
+    while (cursor < result.output.size())
+    {
+        const size_t recordEnd = result.output.find('\x1e', cursor);
+        if (recordEnd == std::string::npos)
+            break;
+
+        const std::string_view record(result.output.data() + cursor, recordEnd - cursor);
+        cursor = recordEnd + 1;
+        if (record.empty())
+            continue;
+
+        const std::vector<std::string_view> fields = SplitFields(record, '\x1f');
+        if (fields.size() < 5)
+            continue;
+
+        GitFileHistoryEntry entry;
+        entry.commit = std::string(fields[0]);
+        entry.shortCommit = std::string(fields[1]);
+        entry.author = std::string(fields[2]);
+        entry.date = std::string(fields[3]);
+        entry.summary = std::string(fields[4]);
+        if (!commitUrlPrefix.empty())
+            entry.url = commitUrlPrefix + entry.commit;
+        entries.push_back(std::move(entry));
+    }
+
+    return entries;
+}
+
+std::string GitRepository::GitHubCommitUrl(std::string_view commit, bool logCommand) const
+{
+    const std::optional<GitHubRepositoryInfo> repositoryInfo = ParseGitHubRemote(RemoteUrl("origin", logCommand));
+    if (!repositoryInfo.has_value())
+        return {};
+
+    std::string url = "https://github.com/" + repositoryInfo->owner + "/" + repositoryInfo->repository + "/commit/";
+    url += commit;
+    return url;
+}
+
 bool GitRepository::BranchExists(std::string_view branch, bool logCommand) const
 {
     const std::string ref = "refs/heads/" + std::string(branch);
@@ -192,6 +316,14 @@ bool GitRepository::CreateAndCheckoutBranch(std::string_view branch, std::string
         command += " " + Quote(startPoint);
 
     return Run(command).Succeeded();
+}
+
+bool GitRepository::CheckoutFileVersion(std::string_view commit, std::string_view file)
+{
+    if (commit.empty() || file.empty())
+        return false;
+
+    return Run("checkout " + Quote(commit) + " -- " + Quote(file)).Succeeded();
 }
 
 std::string GitRepository::Trim(std::string text)

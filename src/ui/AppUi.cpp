@@ -409,6 +409,29 @@ void AppUi::RunOpenFileDiffJob(const std::filesystem::path& repoRoot, const std:
     shelfService.OpenFileDiff(file);
 }
 
+FileHistoryResult AppUi::RunLoadFileHistoryJob(const std::filesystem::path& repoRoot, const std::string& file)
+{
+    GitRepository repository(repoRoot);
+
+    FileHistoryResult result;
+    result.file = file;
+    result.entries = repository.FileHistory(result.file);
+    result.succeeded = true;
+    return result;
+}
+
+ShelfJobResult AppUi::RunRestoreFileHistoryVersionJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& file, const std::string& commit)
+{
+    GitRepository repository(repoRoot);
+
+    ShelfJobResult result;
+    result.shelf = targetBranch;
+    result.file = file;
+    result.succeeded = repository.CheckoutFileVersion(commit, result.file);
+    result.addFileState = result.succeeded;
+    return result;
+}
+
 AppUi::AppUi()
 {
     const std::filesystem::path currentPath = std::filesystem::current_path();
@@ -453,6 +476,23 @@ void AppUi::PollAsyncOperations()
             m_mainRemoteAvailable = false;
             m_mainBehindCount = 0;
             std::cout << "Failed to select source folder: " << m_sourcePathError << '\n';
+        }
+    }
+
+    if (m_fileHistoryFuture.has_value() && m_fileHistoryFuture->wait_for(0ms) == std::future_status::ready)
+    {
+        FileHistoryResult result = m_fileHistoryFuture->get();
+        m_fileHistoryFuture.reset();
+
+        if (result.file == m_fileHistoryFile && result.succeeded)
+        {
+            m_fileHistoryEntries = std::move(result.entries);
+            m_fileHistoryError = m_fileHistoryEntries.empty() ? "No history found for this file." : std::string();
+        }
+        else if (result.file == m_fileHistoryFile)
+        {
+            m_fileHistoryEntries.clear();
+            m_fileHistoryError = "Failed to load file history.";
         }
     }
 
@@ -702,6 +742,12 @@ void AppUi::DrawConfirmationPopup()
         ui::widgets::Text("Replace the current disk version with the shelf branch version for:");
         ui::widgets::Text(m_confirmationFiles.size() > 1 ? (std::to_string(m_confirmationFiles.size()) + " files") : m_confirmationFile);
     }
+    else if (m_confirmationAction == ConfirmationAction::RestoreHistoryVersion)
+    {
+        ui::widgets::Text("Replace the current disk version with this history version:");
+        ui::widgets::Text(m_confirmationFile);
+        ui::widgets::Text(m_confirmationCommit);
+    }
     else
     {
         ui::widgets::Text("No operation is pending.");
@@ -729,6 +775,7 @@ void AppUi::ConfirmPendingAction()
     const ConfirmationAction action = m_confirmationAction;
     const std::string shelf = m_confirmationShelf;
     const std::string file = m_confirmationFile;
+    const std::string commit = m_confirmationCommit;
     const std::vector<std::string> files = m_confirmationFiles.empty() ? std::vector<std::string>{ file } : m_confirmationFiles;
     ClearPendingConfirmation();
 
@@ -736,6 +783,8 @@ void AppUi::ConfirmPendingAction()
         RevertCheckedOutFilesConfirmed(shelf, files);
     else if (action == ConfirmationAction::RestoreShelfFile)
         RestoreShelfFiles(shelf, files);
+    else if (action == ConfirmationAction::RestoreHistoryVersion)
+        RestoreFileHistoryVersion(file, commit);
 }
 
 void AppUi::ClearPendingConfirmation()
@@ -743,8 +792,19 @@ void AppUi::ClearPendingConfirmation()
     m_confirmationAction = ConfirmationAction::None;
     m_confirmationShelf.clear();
     m_confirmationFile.clear();
+    m_confirmationCommit.clear();
     m_confirmationFiles.clear();
     m_openConfirmationPopup = false;
+}
+
+void AppUi::RequestHistoryVersionConfirmation(std::string_view file, std::string_view commit)
+{
+    m_confirmationAction = ConfirmationAction::RestoreHistoryVersion;
+    m_confirmationShelf = m_targetBranch;
+    m_confirmationFile = file;
+    m_confirmationCommit = commit;
+    m_confirmationFiles = { m_confirmationFile };
+    m_openConfirmationPopup = true;
 }
 
 void AppUi::OpenMainSubmitPopup()
@@ -1119,9 +1179,83 @@ void AppUi::DrawFileChanges()
 
         ui::widgets::Separator();
 
-        DrawShelfList();
+        if (ui::widgets::BeginTabBar("FileChangesTabs"))
+        {
+            if (ui::widgets::BeginTabItem("Active Changes"))
+            {
+                DrawShelfList();
+                ui::widgets::EndTabItem();
+            }
+
+            if (ui::widgets::BeginTabItem("File History", m_selectFileHistoryTab))
+            {
+                DrawFileHistory();
+                ui::widgets::EndTabItem();
+            }
+
+            m_selectFileHistoryTab = false;
+            ui::widgets::EndTabBar();
+        }
+        else
+        {
+            DrawShelfList();
+        }
     }
     ui::widgets::EndWindow();
+}
+
+void AppUi::DrawFileHistory()
+{
+    if (m_fileHistoryFile.empty())
+    {
+        ui::widgets::Text("Right-click a file and choose File History.");
+        return;
+    }
+
+    ui::widgets::Text(m_fileHistoryFile);
+    ui::widgets::SameLine();
+    if (ui::widgets::Button("Refresh"))
+        OpenFileHistory(m_fileHistoryFile);
+
+    if (m_fileHistoryFuture.has_value())
+    {
+        ui::widgets::SameLine();
+        ui::widgets::Spinner("Loading history");
+    }
+
+    if (!m_fileHistoryError.empty())
+        ui::widgets::Text(m_fileHistoryError);
+
+    ui::widgets::Separator();
+    ui::widgets::BeginScrollRegion("FileHistoryScroll");
+    for (const GitFileHistoryEntry& entry : m_fileHistoryEntries)
+    {
+        std::string label = entry.shortCommit;
+        if (!entry.date.empty())
+            label += "  " + entry.date;
+        if (!entry.author.empty())
+            label += "  " + entry.author;
+        if (!entry.summary.empty())
+            label += "  " + entry.summary;
+
+        ui::widgets::TreeLeaf(label + "##history/" + entry.commit);
+        if (ui::widgets::BeginContextMenuForLastItem())
+        {
+            if (ui::widgets::MenuItem("Update file to this version", !entry.commit.empty() && !IsShelfBusy(m_targetBranch)))
+            {
+                if (HasLocalChanges(m_fileHistoryFile))
+                    RequestHistoryVersionConfirmation(m_fileHistoryFile, entry.commit);
+                else
+                    RestoreFileHistoryVersion(m_fileHistoryFile, entry.commit);
+            }
+
+            if (ui::widgets::MenuItem("Open GitHub Change", !entry.url.empty()))
+                OpenFileHistoryChange(entry);
+
+            ui::widgets::EndContextMenu();
+        }
+    }
+    ui::widgets::EndScrollRegion();
 }
 
 void AppUi::DrawLog()
@@ -1235,6 +1369,9 @@ void AppUi::DrawFileEntry(const std::filesystem::directory_entry& entry)
         const std::optional<std::string> activeShelf = ActiveShelfForFile(relativePath);
         if (activeShelf.has_value())
         {
+            if (ui::widgets::MenuItem("File History", true))
+                OpenFileHistory(relativePath);
+
             if (ui::widgets::MenuItem("Revert", !IsShelfBusy(*activeShelf)))
             {
                 const std::vector<std::string> actionFiles = SelectedFilesForShelf(*activeShelf, relativePath);
@@ -1243,6 +1380,9 @@ void AppUi::DrawFileEntry(const std::filesystem::directory_entry& entry)
         }
         else
         {
+            if (ui::widgets::MenuItem("File History", true))
+                OpenFileHistory(relativePath);
+
             if (ui::widgets::MenuItem("Check out", true))
             {
                 SelectShelf(m_targetBranch);
@@ -1496,6 +1636,8 @@ void AppUi::DrawShelfFile(const std::string& shelf, const std::vector<std::strin
         const std::vector<std::string> actionFiles = SelectedFilesForShelf(shelf, file);
         if (ui::widgets::MenuItem("Diff", true))
             OpenFileDiff(file);
+        if (ui::widgets::MenuItem("File History", true))
+            OpenFileHistory(file);
         if (ui::widgets::MenuItem("Revert", true))
             RevertCheckedOutFiles(shelf, actionFiles);
         ui::widgets::EndContextMenu();
@@ -1516,6 +1658,9 @@ void AppUi::DrawShelfCommittedFile(const std::string& shelf, const std::vector<G
     if (ui::widgets::BeginContextMenuForLastItem())
     {
         const std::vector<std::string> actionFiles = SelectedShelfFilesForShelf(shelf, file.path);
+        if (ui::widgets::MenuItem("File History", true))
+            OpenFileHistory(file.path);
+
         if (ui::widgets::MenuItem("Restore", !IsShelfBusy(shelf)))
         {
             const bool hasLocalChanges = std::any_of(actionFiles.begin(), actionFiles.end(), [this](const std::string& actionFile) {
@@ -1934,6 +2079,44 @@ void AppUi::OpenFileDiff(const std::string& file)
     std::thread([repoRoot, targetBranch, file]() {
         RunOpenFileDiffJob(repoRoot, targetBranch, file);
     }).detach();
+}
+
+void AppUi::OpenFileHistory(const std::string& file)
+{
+    if (!m_repository.has_value() || file.empty())
+        return;
+
+    m_fileHistoryFile = file;
+    m_fileHistoryEntries.clear();
+    m_fileHistoryError.clear();
+    m_selectFileHistoryTab = true;
+
+    const std::filesystem::path repoRoot = m_sourcePath;
+    m_fileHistoryFuture = std::async(std::launch::async, [repoRoot, file]() {
+        return RunLoadFileHistoryJob(repoRoot, file);
+    });
+}
+
+void AppUi::RestoreFileHistoryVersion(const std::string& file, const std::string& commit)
+{
+    if (!m_repository.has_value() || file.empty() || commit.empty() || IsShelfBusy(m_targetBranch))
+        return;
+
+    const std::filesystem::path repoRoot = m_sourcePath;
+    const std::string targetBranch = m_targetBranch;
+    StartShelfJob(targetBranch, "Restoring history", std::async(std::launch::async, [repoRoot, targetBranch, file, commit]() {
+        return RunRestoreFileHistoryVersionJob(repoRoot, targetBranch, file, commit);
+    }));
+}
+
+void AppUi::OpenFileHistoryChange(const GitFileHistoryEntry& entry)
+{
+    if (entry.url.empty())
+        return;
+
+    std::cout << "Open history change: " << entry.url << '\n';
+    if (!OpenUrl(entry.url))
+        std::cout << "Failed to open history change in browser\n";
 }
 
 void AppUi::RevertShelfFile(const std::string& shelf, const std::string& file)
