@@ -62,22 +62,6 @@ jobs:
               sha: branch.data.commit.sha
             }];
 
-            const pulls = await github.paginate(github.rest.pulls.list, {
-              owner,
-              repo,
-              state: "open",
-              per_page: 100
-            });
-
-            for (const pull of pulls) {
-              candidates.push({
-                kind: "pull_request",
-                label: `PR #${pull.number}`,
-                ref: `refs/pull/${pull.number}/head`,
-                sha: pull.head.sha
-              });
-            }
-
             const targets = [];
             for (const candidate of candidates) {
               if (force || !(await alreadyPassed(candidate.sha))) {
