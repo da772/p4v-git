@@ -25,7 +25,7 @@ class ShelfService
 {
 public:
     void SetRepository(GitRepository* repository);
-    void SetTargetBranch(std::string branch);
+    void SetTargetBranch(std::string_view branch);
 
     std::string UserPrefix() const;
     std::string MakeShelfBranch(std::string_view shelfName) const;
