@@ -39,12 +39,20 @@ git submodule update --init --recursive
 Configure:
 
 ```sh
+# Linux
+cmake --preset linux-clang-ninja
+
+# Other platforms
 cmake -S . -B build
 ```
 
 Build:
 
 ```sh
+# Linux
+cmake --build --preset linux-clang-ninja
+
+# Other platforms
 cmake --build build --config Debug
 ```
 
@@ -54,7 +62,10 @@ Run:
 # Windows
 .\build\Debug\p4v-git.exe
 
-# Linux/macOS
+# Linux
+./build/linux-clang-ninja/p4v-git
+
+# macOS
 ./build/p4v-git
 ```
 
