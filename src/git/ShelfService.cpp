@@ -519,7 +519,10 @@ bool ShelfService::ShelveFiles(std::string_view shelfBranch, const std::vector<s
         std::string commitCommand = "commit -m " + Quote(summary);
         if (!description.empty())
             commitCommand += " -m " + Quote(description);
-        committed = shelfWorktree.Run(commitCommand).Succeeded();
+        const GitCommandResult commitResult = shelfWorktree.Run(commitCommand);
+        committed = commitResult.Succeeded() ||
+            commitResult.output.find("nothing to commit") != std::string::npos ||
+            commitResult.output.find("no changes added to commit") != std::string::npos;
     }
 
     m_repository->Run("worktree remove --force " + Quote(worktreeRoot.string()));

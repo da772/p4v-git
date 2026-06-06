@@ -1685,7 +1685,7 @@ void AppUi::DrawShelfFile(const std::string& shelf, const std::vector<std::strin
     {
         const std::vector<std::string> actionFiles = SelectedFilesForShelf(shelf, file);
         if (ui::widgets::MenuItem("Diff", true))
-            OpenFileDiff(file);
+            OpenFileDiffs(actionFiles);
         if (ui::widgets::MenuItem("File History", true))
             OpenFileHistory(file, shelf);
         if (ui::widgets::MenuItem("Revert", true))
@@ -2131,6 +2131,12 @@ void AppUi::OpenFileDiff(const std::string& file)
     }).detach();
 }
 
+void AppUi::OpenFileDiffs(const std::vector<std::string>& files)
+{
+    for (const std::string& file : files)
+        OpenFileDiff(file);
+}
+
 void AppUi::OpenFileHistory(const std::string& file, std::string_view shelf)
 {
     if (!m_repository.has_value() || file.empty())
@@ -2391,6 +2397,12 @@ void AppUi::SubmitShelf(const std::string& shelf)
     const std::filesystem::path repoRoot = m_sourcePath;
     const std::string targetBranch = m_targetBranch;
     const std::vector<std::string> files = m_workspaceState.CheckedOutFiles(shelf);
+    if (!files.empty())
+    {
+        OpenShelvePopup(shelf, true);
+        return;
+    }
+
     StartShelfJob(shelf, "Submitting", std::async(std::launch::async, [repoRoot, targetBranch, shelf, files]() {
         return RunSubmitShelfJob(repoRoot, targetBranch, shelf, files);
     }));
