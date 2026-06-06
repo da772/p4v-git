@@ -1,5 +1,8 @@
 # p4v-git
 
+[![Release Build Status](https://github.com/da772/p4v-git/actions/workflows/release-build-check.yml/badge.svg)](https://github.com/da772/p4v-git/actions/workflows/release-build-check.yml)
+[![Build Release Artifacts](https://github.com/da772/p4v-git/actions/workflows/build-release.yml/badge.svg)](https://github.com/da772/p4v-git/actions/workflows/build-release.yml)
+
 <img src="icon.png" alt="p4v-git icon" width="96">
 
 `p4v-git` is a cross-platform desktop Git client inspired by Perforce P4V. The goal is to provide a familiar workspace-oriented UI for browsing a repository, organizing active file changes into shelves, reviewing shelf diffs, opening/merging pull requests, and submitting changes back to a selected target branch.
@@ -9,6 +12,13 @@ Current version: `0.2.0`
 The application is built with C++20, CMake, GLFW, Vulkan, and Dear ImGui docking.
 
 ![p4v-git application screenshot](docs/images/p4v-git-app.png)
+
+## CI Status
+
+| Workflow | Result | Coverage |
+| --- | --- | --- |
+| Release Build Status | [![Release Build Status](https://github.com/da772/p4v-git/actions/workflows/release-build-check.yml/badge.svg)](https://github.com/da772/p4v-git/actions/workflows/release-build-check.yml) | Verifies Linux and Windows release builds on pull requests and pushes to `main`. |
+| Build Release Artifacts | [![Build Release Artifacts](https://github.com/da772/p4v-git/actions/workflows/build-release.yml/badge.svg)](https://github.com/da772/p4v-git/actions/workflows/build-release.yml) | Manually builds Linux and Windows release executables and publishes a GitHub release. |
 
 ## Features
 
