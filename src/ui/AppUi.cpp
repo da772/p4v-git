@@ -50,6 +50,23 @@ static std::optional<std::string> CommittedShelfForFile(const std::vector<ShelfC
     return matchingShelf;
 }
 
+static std::string BuildHistoryDragPayload(std::string_view file, std::string_view commit)
+{
+    std::string payload(file);
+    payload += '\n';
+    payload += commit;
+    return payload;
+}
+
+static std::optional<std::pair<std::string, std::string>> ParseHistoryDragPayload(std::string_view payload)
+{
+    const size_t separator = payload.find('\n');
+    if (separator == std::string_view::npos || separator == 0 || separator + 1 >= payload.size())
+        return std::nullopt;
+
+    return std::make_pair(std::string(payload.substr(0, separator)), std::string(payload.substr(separator + 1)));
+}
+
 static size_t AssignStatusFilesToWorkspaceState(RepositorySnapshot& snapshot)
 {
     size_t assignedCount = 0;
@@ -409,6 +426,24 @@ void AppUi::RunOpenFileDiffJob(const std::filesystem::path& repoRoot, const std:
     shelfService.OpenFileDiff(file);
 }
 
+void AppUi::RunOpenFileHistoryCurrentDiffJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& file, const std::string& commit)
+{
+    GitRepository repository(repoRoot);
+    ShelfService shelfService;
+    shelfService.SetRepository(&repository);
+    shelfService.SetTargetBranch(targetBranch);
+    shelfService.OpenFileVersionToWorkingDiff(file, commit);
+}
+
+void AppUi::RunOpenFileHistoryVersionDiffJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& file, const std::string& leftCommit, const std::string& rightCommit)
+{
+    GitRepository repository(repoRoot);
+    ShelfService shelfService;
+    shelfService.SetRepository(&repository);
+    shelfService.SetTargetBranch(targetBranch);
+    shelfService.OpenFileVersionDiff(file, leftCommit, rightCommit);
+}
+
 FileHistoryResult AppUi::RunLoadFileHistoryJob(const std::filesystem::path& repoRoot, const std::string& file)
 {
     GitRepository repository(repoRoot);
@@ -420,12 +455,12 @@ FileHistoryResult AppUi::RunLoadFileHistoryJob(const std::filesystem::path& repo
     return result;
 }
 
-ShelfJobResult AppUi::RunRestoreFileHistoryVersionJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& file, const std::string& commit)
+ShelfJobResult AppUi::RunRestoreFileHistoryVersionJob(const std::filesystem::path& repoRoot, const std::string& shelf, const std::string& file, const std::string& commit)
 {
     GitRepository repository(repoRoot);
 
     ShelfJobResult result;
-    result.shelf = targetBranch;
+    result.shelf = shelf;
     result.file = file;
     result.succeeded = repository.CheckoutFileVersion(commit, result.file);
     result.addFileState = result.succeeded;
@@ -800,7 +835,7 @@ void AppUi::ClearPendingConfirmation()
 void AppUi::RequestHistoryVersionConfirmation(std::string_view file, std::string_view commit)
 {
     m_confirmationAction = ConfirmationAction::RestoreHistoryVersion;
-    m_confirmationShelf = m_targetBranch;
+    m_confirmationShelf = m_fileHistoryShelf.empty() ? m_targetBranch : m_fileHistoryShelf;
     m_confirmationFile = file;
     m_confirmationCommit = commit;
     m_confirmationFiles = { m_confirmationFile };
@@ -1215,7 +1250,7 @@ void AppUi::DrawFileHistory()
     ui::widgets::Text(m_fileHistoryFile);
     ui::widgets::SameLine();
     if (ui::widgets::Button("Refresh"))
-        OpenFileHistory(m_fileHistoryFile);
+        OpenFileHistory(m_fileHistoryFile, m_fileHistoryShelf);
 
     if (m_fileHistoryFuture.has_value())
     {
@@ -1228,6 +1263,7 @@ void AppUi::DrawFileHistory()
 
     ui::widgets::Separator();
     ui::widgets::BeginScrollRegion("FileHistoryScroll");
+    const std::string historyShelf = m_fileHistoryShelf.empty() ? m_targetBranch : m_fileHistoryShelf;
     for (const GitFileHistoryEntry& entry : m_fileHistoryEntries)
     {
         std::string label = entry.shortCommit;
@@ -1239,9 +1275,23 @@ void AppUi::DrawFileHistory()
             label += "  " + entry.summary;
 
         ui::widgets::TreeLeaf(label + "##history/" + entry.commit);
+        ui::widgets::DragDropSource("p4v-git-history", BuildHistoryDragPayload(m_fileHistoryFile, entry.commit), entry.shortCommit);
+
+        if (const std::optional<std::string> payload = ui::widgets::AcceptDragDropPayload("p4v-git-history"))
+        {
+            const std::optional<std::pair<std::string, std::string>> draggedHistory = ParseHistoryDragPayload(*payload);
+            if (draggedHistory.has_value() && draggedHistory->first == m_fileHistoryFile && draggedHistory->second != entry.commit)
+                OpenFileHistoryVersionDiff(m_fileHistoryFile, draggedHistory->second, entry.commit);
+            else if (draggedHistory.has_value() && draggedHistory->first != m_fileHistoryFile)
+                m_fileHistoryError = "Drop a history row from the same file.";
+        }
+
         if (ui::widgets::BeginContextMenuForLastItem())
         {
-            if (ui::widgets::MenuItem("Update file to this version", !entry.commit.empty() && !IsShelfBusy(m_targetBranch)))
+            if (ui::widgets::MenuItem("Diff against current version", !entry.commit.empty()))
+                OpenFileHistoryCurrentDiff(entry);
+
+            if (ui::widgets::MenuItem("Update file to this version", !entry.commit.empty() && !IsShelfBusy(historyShelf)))
             {
                 if (HasLocalChanges(m_fileHistoryFile))
                     RequestHistoryVersionConfirmation(m_fileHistoryFile, entry.commit);
@@ -1370,7 +1420,7 @@ void AppUi::DrawFileEntry(const std::filesystem::directory_entry& entry)
         if (activeShelf.has_value())
         {
             if (ui::widgets::MenuItem("File History", true))
-                OpenFileHistory(relativePath);
+                OpenFileHistory(relativePath, *activeShelf);
 
             if (ui::widgets::MenuItem("Revert", !IsShelfBusy(*activeShelf)))
             {
@@ -1381,7 +1431,7 @@ void AppUi::DrawFileEntry(const std::filesystem::directory_entry& entry)
         else
         {
             if (ui::widgets::MenuItem("File History", true))
-                OpenFileHistory(relativePath);
+                OpenFileHistory(relativePath, m_targetBranch);
 
             if (ui::widgets::MenuItem("Check out", true))
             {
@@ -1637,7 +1687,7 @@ void AppUi::DrawShelfFile(const std::string& shelf, const std::vector<std::strin
         if (ui::widgets::MenuItem("Diff", true))
             OpenFileDiff(file);
         if (ui::widgets::MenuItem("File History", true))
-            OpenFileHistory(file);
+            OpenFileHistory(file, shelf);
         if (ui::widgets::MenuItem("Revert", true))
             RevertCheckedOutFiles(shelf, actionFiles);
         ui::widgets::EndContextMenu();
@@ -1659,7 +1709,7 @@ void AppUi::DrawShelfCommittedFile(const std::string& shelf, const std::vector<G
     {
         const std::vector<std::string> actionFiles = SelectedShelfFilesForShelf(shelf, file.path);
         if (ui::widgets::MenuItem("File History", true))
-            OpenFileHistory(file.path);
+            OpenFileHistory(file.path, shelf);
 
         if (ui::widgets::MenuItem("Restore", !IsShelfBusy(shelf)))
         {
@@ -2081,12 +2131,13 @@ void AppUi::OpenFileDiff(const std::string& file)
     }).detach();
 }
 
-void AppUi::OpenFileHistory(const std::string& file)
+void AppUi::OpenFileHistory(const std::string& file, std::string_view shelf)
 {
     if (!m_repository.has_value() || file.empty())
         return;
 
     m_fileHistoryFile = file;
+    m_fileHistoryShelf = shelf.empty() ? m_targetBranch : std::string(shelf);
     m_fileHistoryEntries.clear();
     m_fileHistoryError.clear();
     m_selectFileHistoryTab = true;
@@ -2097,15 +2148,41 @@ void AppUi::OpenFileHistory(const std::string& file)
     });
 }
 
-void AppUi::RestoreFileHistoryVersion(const std::string& file, const std::string& commit)
+void AppUi::OpenFileHistoryCurrentDiff(const GitFileHistoryEntry& entry)
 {
-    if (!m_repository.has_value() || file.empty() || commit.empty() || IsShelfBusy(m_targetBranch))
+    if (!m_repository.has_value() || m_fileHistoryFile.empty() || entry.commit.empty())
         return;
 
     const std::filesystem::path repoRoot = m_sourcePath;
     const std::string targetBranch = m_targetBranch;
-    StartShelfJob(targetBranch, "Restoring history", std::async(std::launch::async, [repoRoot, targetBranch, file, commit]() {
-        return RunRestoreFileHistoryVersionJob(repoRoot, targetBranch, file, commit);
+    const std::string file = m_fileHistoryFile;
+    const std::string commit = entry.commit;
+    std::thread([repoRoot, targetBranch, file, commit]() {
+        RunOpenFileHistoryCurrentDiffJob(repoRoot, targetBranch, file, commit);
+    }).detach();
+}
+
+void AppUi::OpenFileHistoryVersionDiff(const std::string& file, const std::string& leftCommit, const std::string& rightCommit)
+{
+    if (!m_repository.has_value() || file.empty() || leftCommit.empty() || rightCommit.empty() || leftCommit == rightCommit)
+        return;
+
+    const std::filesystem::path repoRoot = m_sourcePath;
+    const std::string targetBranch = m_targetBranch;
+    std::thread([repoRoot, targetBranch, file, leftCommit, rightCommit]() {
+        RunOpenFileHistoryVersionDiffJob(repoRoot, targetBranch, file, leftCommit, rightCommit);
+    }).detach();
+}
+
+void AppUi::RestoreFileHistoryVersion(const std::string& file, const std::string& commit)
+{
+    const std::string shelf = m_fileHistoryShelf.empty() ? m_targetBranch : m_fileHistoryShelf;
+    if (!m_repository.has_value() || file.empty() || commit.empty() || IsShelfBusy(shelf))
+        return;
+
+    const std::filesystem::path repoRoot = m_sourcePath;
+    StartShelfJob(shelf, "Restoring history", std::async(std::launch::async, [repoRoot, shelf, file, commit]() {
+        return RunRestoreFileHistoryVersionJob(repoRoot, shelf, file, commit);
     }));
 }
 
