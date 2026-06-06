@@ -123,8 +123,8 @@ ProcessResult RunHiddenCommand(std::string_view command)
         return result;
     }
 
-    while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr)
-        result.output += buffer.data();
+    while (const size_t bytesRead = fread(buffer.data(), 1, buffer.size(), pipe))
+        result.output.append(buffer.data(), bytesRead);
 
     result.exitCode = pclose(pipe);
 #endif

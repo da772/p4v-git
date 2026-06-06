@@ -19,6 +19,24 @@
 
 namespace p4vgit
 {
+static size_t AssignStatusFilesToWorkspaceState(RepositorySnapshot& snapshot)
+{
+    size_t assignedCount = 0;
+    for (const GitStatusEntry& entry : snapshot.statusEntries)
+    {
+        if (entry.path.empty())
+            continue;
+
+        if (snapshot.workspaceState.IsCheckedOut(snapshot.targetBranch, entry.path))
+            continue;
+
+        snapshot.workspaceState.CheckOut(snapshot.targetBranch, entry.path);
+        ++assignedCount;
+    }
+
+    return assignedCount;
+}
+
 RepositorySnapshot AppUi::LoadRepositorySnapshot(const std::filesystem::path& selectedPath, bool discoverRepository, bool logCommands, uint64_t refreshGeneration)
 {
     RepositorySnapshot snapshot;
@@ -67,8 +85,19 @@ RepositorySnapshot AppUi::LoadRepositorySnapshot(const std::filesystem::path& se
 
     shelfService.SetTargetBranch(snapshot.targetBranch);
     snapshot.shelves = shelfService.Shelves(logCommands);
+    repository.Run("add -A .", logCommands);
     snapshot.statusEntries = repository.Status(logCommands);
     snapshot.currentBranch = repository.CurrentBranch(logCommands);
+    const size_t assignedStatusFiles = AssignStatusFilesToWorkspaceState(snapshot);
+    if (assignedStatusFiles > 0)
+        snapshot.workspaceState.Save();
+    if (logCommands)
+    {
+        std::cout << "Refresh status found " << snapshot.statusEntries.size() << " changed file(s)";
+        if (assignedStatusFiles > 0)
+            std::cout << " and assigned " << assignedStatusFiles << " to " << snapshot.targetBranch;
+        std::cout << ".\n";
+    }
     const MainSyncStatus mainSyncStatus = shelfService.RefreshMain(logCommands);
     snapshot.mainRemoteAvailable = mainSyncStatus.remoteAvailable;
     snapshot.mainBehindCount = mainSyncStatus.behindCount;
@@ -254,6 +283,23 @@ ShelfJobResult AppUi::RunRevertShelfFileJob(const std::filesystem::path& repoRoo
     return result;
 }
 
+ShelfJobResult AppUi::RunRevertShelfFilesJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelf, std::vector<std::string> files)
+{
+    GitRepository repository(repoRoot);
+    ShelfService shelfService;
+    shelfService.SetRepository(&repository);
+    shelfService.SetTargetBranch(std::move(targetBranch));
+
+    ShelfJobResult result;
+    result.shelf = std::move(shelf);
+    result.files = std::move(files);
+    result.succeeded = true;
+    for (const std::string& file : result.files)
+        result.succeeded = shelfService.RevertFileFromShelf(result.shelf, file) && result.succeeded;
+    result.removeShelfFileState = result.succeeded;
+    return result;
+}
+
 ShelfJobResult AppUi::RunRevertActiveFileJob(const std::filesystem::path& repoRoot, std::string shelf, std::string file)
 {
     GitRepository repository(repoRoot);
@@ -268,6 +314,22 @@ ShelfJobResult AppUi::RunRevertActiveFileJob(const std::filesystem::path& repoRo
     return result;
 }
 
+ShelfJobResult AppUi::RunRevertActiveFilesJob(const std::filesystem::path& repoRoot, std::string shelf, std::vector<std::string> files)
+{
+    GitRepository repository(repoRoot);
+    ShelfService shelfService;
+    shelfService.SetRepository(&repository);
+
+    ShelfJobResult result;
+    result.shelf = std::move(shelf);
+    result.files = std::move(files);
+    result.succeeded = true;
+    for (const std::string& file : result.files)
+        result.succeeded = shelfService.UndoLocalFileChanges(file) && result.succeeded;
+    result.clearMainActiveFiles = result.succeeded;
+    return result;
+}
+
 ShelfJobResult AppUi::RunRestoreShelfFileJob(const std::filesystem::path& repoRoot, std::string shelf, std::string file)
 {
     GitRepository repository(repoRoot);
@@ -279,6 +341,22 @@ ShelfJobResult AppUi::RunRestoreShelfFileJob(const std::filesystem::path& repoRo
     result.file = std::move(file);
     result.succeeded = shelfService.RestoreFileFromShelfToWorkingTree(result.shelf, result.file);
     result.addFileState = result.succeeded;
+    return result;
+}
+
+ShelfJobResult AppUi::RunRestoreShelfFilesJob(const std::filesystem::path& repoRoot, std::string shelf, std::vector<std::string> files)
+{
+    GitRepository repository(repoRoot);
+    ShelfService shelfService;
+    shelfService.SetRepository(&repository);
+
+    ShelfJobResult result;
+    result.shelf = std::move(shelf);
+    result.files = std::move(files);
+    result.succeeded = true;
+    for (const std::string& file : result.files)
+        result.succeeded = shelfService.RestoreFileFromShelfToWorkingTree(result.shelf, file) && result.succeeded;
+    result.addFilesState = result.succeeded;
     return result;
 }
 
@@ -418,6 +496,8 @@ void AppUi::PollAsyncOperations()
                     continue;
 
                 shelfFiles.files.erase(std::remove_if(shelfFiles.files.begin(), shelfFiles.files.end(), [&result](const GitStatusEntry& file) {
+                    if (!result.files.empty())
+                        return std::find(result.files.begin(), result.files.end(), file.path) != result.files.end();
                     return file.path == result.file;
                 }), shelfFiles.files.end());
                 break;
@@ -547,6 +627,16 @@ void AppUi::RequestConfirmation(ConfirmationAction action, std::string shelf, st
     m_confirmationAction = action;
     m_confirmationShelf = std::move(shelf);
     m_confirmationFile = std::move(file);
+    m_confirmationFiles = { m_confirmationFile };
+    m_openConfirmationPopup = true;
+}
+
+void AppUi::RequestConfirmation(ConfirmationAction action, std::string shelf, std::vector<std::string> files)
+{
+    m_confirmationAction = action;
+    m_confirmationShelf = std::move(shelf);
+    m_confirmationFiles = std::move(files);
+    m_confirmationFile = m_confirmationFiles.empty() ? std::string() : m_confirmationFiles.front();
     m_openConfirmationPopup = true;
 }
 
@@ -565,12 +655,12 @@ void AppUi::DrawConfirmationPopup()
     if (m_confirmationAction == ConfirmationAction::RevertActiveFile)
     {
         ui::widgets::Text("Undo local changes on disk for:");
-        ui::widgets::Text(m_confirmationFile);
+        ui::widgets::Text(m_confirmationFiles.size() > 1 ? (std::to_string(m_confirmationFiles.size()) + " files") : m_confirmationFile);
     }
     else if (m_confirmationAction == ConfirmationAction::RestoreShelfFile)
     {
         ui::widgets::Text("Replace the current disk version with the shelf branch version for:");
-        ui::widgets::Text(m_confirmationFile);
+        ui::widgets::Text(m_confirmationFiles.size() > 1 ? (std::to_string(m_confirmationFiles.size()) + " files") : m_confirmationFile);
     }
     else
     {
@@ -599,12 +689,13 @@ void AppUi::ConfirmPendingAction()
     const ConfirmationAction action = m_confirmationAction;
     const std::string shelf = m_confirmationShelf;
     const std::string file = m_confirmationFile;
+    const std::vector<std::string> files = m_confirmationFiles.empty() ? std::vector<std::string>{ file } : m_confirmationFiles;
     ClearPendingConfirmation();
 
     if (action == ConfirmationAction::RevertActiveFile)
-        RevertCheckedOutFile(shelf, file);
+        RevertCheckedOutFilesConfirmed(shelf, files);
     else if (action == ConfirmationAction::RestoreShelfFile)
-        RestoreShelfFile(shelf, file);
+        RestoreShelfFiles(shelf, files);
 }
 
 void AppUi::ClearPendingConfirmation()
@@ -612,6 +703,7 @@ void AppUi::ClearPendingConfirmation()
     m_confirmationAction = ConfirmationAction::None;
     m_confirmationShelf.clear();
     m_confirmationFile.clear();
+    m_confirmationFiles.clear();
     m_openConfirmationPopup = false;
 }
 
@@ -1343,8 +1435,8 @@ void AppUi::DrawShelfPanel(const std::string& shelf, bool isMainShelf)
             }
             else
             {
-                for (const GitStatusEntry& file : shelfFiles)
-                    DrawShelfCommittedFile(shelf, file);
+                for (size_t fileIndex = 0; fileIndex < shelfFiles.size(); ++fileIndex)
+                    DrawShelfCommittedFile(shelf, shelfFiles, fileIndex);
             }
 
             ui::widgets::EndTreeNode();
@@ -1376,30 +1468,43 @@ void AppUi::DrawShelfFile(const std::string& shelf, const std::vector<std::strin
     {
         const std::vector<std::string> actionFiles = SelectedFilesForShelf(shelf, file);
         if (ui::widgets::MenuItem("Diff", true))
-            OpenFileDiff(file);
+        {
+            for (const std::string& actionFile : actionFiles)
+                OpenFileDiff(actionFile);
+        }
         if (ui::widgets::MenuItem("Revert", true))
             RevertCheckedOutFiles(shelf, actionFiles);
         ui::widgets::EndContextMenu();
     }
 }
 
-void AppUi::DrawShelfCommittedFile(const std::string& shelf, const GitStatusEntry& file)
+void AppUi::DrawShelfCommittedFile(const std::string& shelf, const std::vector<GitStatusEntry>& files, size_t fileIndex)
 {
+    if (fileIndex >= files.size())
+        return;
+
+    const GitStatusEntry& file = files[fileIndex];
     const std::string label = file.status + "  " + file.path;
-    ui::widgets::Selectable(label + "##shelf-file/" + shelf + "/" + file.path, false);
+    const bool selected = IsShelfFileSelected(shelf, file.path);
+    if (ui::widgets::Selectable(label + "##shelf-file/" + shelf + "/" + file.path, selected))
+        SelectShelfFile(shelf, files, fileIndex);
 
     if (ui::widgets::BeginContextMenuForLastItem())
     {
+        const std::vector<std::string> actionFiles = SelectedShelfFilesForShelf(shelf, file.path);
         if (ui::widgets::MenuItem("Restore", !IsShelfBusy(shelf)))
         {
-            if (HasLocalChanges(file.path))
-                RequestConfirmation(ConfirmationAction::RestoreShelfFile, shelf, file.path);
+            const bool hasLocalChanges = std::any_of(actionFiles.begin(), actionFiles.end(), [this](const std::string& actionFile) {
+                return HasLocalChanges(actionFile);
+            });
+            if (hasLocalChanges)
+                RequestConfirmation(ConfirmationAction::RestoreShelfFile, shelf, actionFiles);
             else
-                RestoreShelfFile(shelf, file.path);
+                RestoreShelfFiles(shelf, actionFiles);
         }
 
         if (ui::widgets::MenuItem("Revert", !IsShelfBusy(shelf)))
-            RevertShelfFile(shelf, file.path);
+            RevertShelfFiles(shelf, actionFiles);
         ui::widgets::EndContextMenu();
     }
 }
@@ -1479,13 +1584,10 @@ std::vector<std::string> AppUi::MainActiveFiles() const
             files.push_back(file);
     }
 
-    if (m_currentGitBranch == m_targetBranch)
+    for (const GitStatusEntry& entry : m_statusEntries)
     {
-        for (const GitStatusEntry& entry : m_statusEntries)
-        {
-            if (!IsFileActiveInShelf(entry.path) && std::find(files.begin(), files.end(), entry.path) == files.end())
-                files.push_back(entry.path);
-        }
+        if (!IsFileActiveInShelf(entry.path) && std::find(files.begin(), files.end(), entry.path) == files.end())
+            files.push_back(entry.path);
     }
 
     return files;
@@ -1511,7 +1613,7 @@ std::optional<std::string> AppUi::ActiveShelfForFile(std::string_view relativePa
             return shelf.shelf;
     }
 
-    if (m_currentGitBranch == m_targetBranch && HasLocalChanges(relativePath))
+    if (HasLocalChanges(relativePath))
         return m_targetBranch;
 
     return std::nullopt;
@@ -1552,9 +1654,6 @@ bool AppUi::IsFileActive(std::string_view relativePath) const
 {
     if (m_workspaceState.IsCheckedOut(relativePath))
         return true;
-
-    if (m_currentGitBranch != m_targetBranch)
-        return false;
 
     return std::any_of(m_statusEntries.begin(), m_statusEntries.end(), [relativePath](const GitStatusEntry& entry) {
         return entry.path == relativePath;
@@ -1655,6 +1754,57 @@ void AppUi::SelectActiveFile(const std::string& shelf, const std::vector<std::st
     m_hasLastSelectedActiveFileIndex = true;
 }
 
+bool AppUi::IsShelfFileSelected(std::string_view shelf, std::string_view file) const
+{
+    if (m_selectedShelfFileShelf != shelf)
+        return false;
+
+    return std::find(m_selectedShelfFiles.begin(), m_selectedShelfFiles.end(), file) != m_selectedShelfFiles.end();
+}
+
+std::vector<std::string> AppUi::SelectedShelfFilesForShelf(std::string_view shelf, std::string_view fallbackFile) const
+{
+    if (m_selectedShelfFileShelf == shelf &&
+        std::find(m_selectedShelfFiles.begin(), m_selectedShelfFiles.end(), fallbackFile) != m_selectedShelfFiles.end())
+    {
+        return m_selectedShelfFiles;
+    }
+
+    return { std::string(fallbackFile) };
+}
+
+void AppUi::SelectShelfFile(const std::string& shelf, const std::vector<GitStatusEntry>& files, size_t fileIndex)
+{
+    if (fileIndex >= files.size())
+        return;
+
+    const bool sameShelf = m_selectedShelfFileShelf == shelf;
+    if (ui::widgets::IsShiftDown() && sameShelf && m_hasLastSelectedShelfFileIndex)
+    {
+        const size_t first = std::min(m_lastSelectedShelfFileIndex, fileIndex);
+        const size_t last = std::max(m_lastSelectedShelfFileIndex, fileIndex);
+        m_selectedShelfFiles.clear();
+        for (size_t index = first; index <= last && index < files.size(); ++index)
+            m_selectedShelfFiles.push_back(files[index].path);
+    }
+    else if (ui::widgets::IsCtrlDown() && sameShelf)
+    {
+        auto selectedFile = std::find(m_selectedShelfFiles.begin(), m_selectedShelfFiles.end(), files[fileIndex].path);
+        if (selectedFile == m_selectedShelfFiles.end())
+            m_selectedShelfFiles.push_back(files[fileIndex].path);
+        else
+            m_selectedShelfFiles.erase(selectedFile);
+    }
+    else
+    {
+        m_selectedShelfFiles = { files[fileIndex].path };
+    }
+
+    m_selectedShelfFileShelf = shelf;
+    m_lastSelectedShelfFileIndex = fileIndex;
+    m_hasLastSelectedShelfFileIndex = true;
+}
+
 void AppUi::MoveCheckedOutFile(std::string_view payload, std::string_view toShelf)
 {
     std::vector<std::string_view> lines;
@@ -1724,13 +1874,30 @@ void AppUi::RevertCheckedOutFiles(const std::string& shelf, const std::vector<st
     {
         if (HasLocalChanges(file))
         {
-            RequestConfirmation(ConfirmationAction::RevertActiveFile, shelf, file);
+            RequestConfirmation(ConfirmationAction::RevertActiveFile, shelf, files);
             return;
         }
     }
 
     for (const std::string& file : files)
         RevertCheckedOutFile(shelf, file);
+}
+
+void AppUi::RevertCheckedOutFilesConfirmed(const std::string& shelf, const std::vector<std::string>& files)
+{
+    if (IsShelfBusy(shelf) || files.empty())
+        return;
+
+    if (files.size() == 1)
+    {
+        RevertCheckedOutFile(shelf, files.front());
+        return;
+    }
+
+    const std::filesystem::path repoRoot = m_sourcePath;
+    StartShelfJob(shelf, "Reverting", std::async(std::launch::async, [repoRoot, shelf, files]() {
+        return RunRevertActiveFilesJob(repoRoot, shelf, files);
+    }));
 }
 
 void AppUi::OpenFileDiff(const std::string& file)
@@ -1757,6 +1924,24 @@ void AppUi::RevertShelfFile(const std::string& shelf, const std::string& file)
     }));
 }
 
+void AppUi::RevertShelfFiles(const std::string& shelf, const std::vector<std::string>& files)
+{
+    if (IsShelfBusy(shelf) || files.empty())
+        return;
+
+    if (files.size() == 1)
+    {
+        RevertShelfFile(shelf, files.front());
+        return;
+    }
+
+    const std::filesystem::path repoRoot = m_sourcePath;
+    const std::string targetBranch = m_targetBranch;
+    StartShelfJob(shelf, "Reverting", std::async(std::launch::async, [repoRoot, targetBranch, shelf, files]() {
+        return RunRevertShelfFilesJob(repoRoot, targetBranch, shelf, files);
+    }));
+}
+
 void AppUi::RestoreShelfFile(const std::string& shelf, const std::string& file)
 {
     if (IsShelfBusy(shelf))
@@ -1768,21 +1953,31 @@ void AppUi::RestoreShelfFile(const std::string& shelf, const std::string& file)
     }));
 }
 
-void AppUi::RestoreShelfFiles(const std::string& shelf, const std::vector<GitStatusEntry>& files)
+void AppUi::RestoreShelfFiles(const std::string& shelf, const std::vector<std::string>& files)
 {
-    if (IsShelfBusy(shelf))
+    if (IsShelfBusy(shelf) || files.empty())
         return;
 
-		// this doesnt work -.-
+    if (files.size() == 1)
+    {
+        RestoreShelfFile(shelf, files.front());
+        return;
+    }
+
     const std::filesystem::path repoRoot = m_sourcePath;
     StartShelfJob(shelf, "Restoring", std::async(std::launch::async, [repoRoot, shelf, files]() {
-				ShelfJobResult result = {};
-				for (size_t i = 0; i < files.size(); i++)
-				{
-					result = RunRestoreShelfFileJob(repoRoot, shelf, files[i].path);
-				}
-        return result;
-			}));
+        return RunRestoreShelfFilesJob(repoRoot, shelf, files);
+    }));
+}
+
+void AppUi::RestoreShelfFiles(const std::string& shelf, const std::vector<GitStatusEntry>& files)
+{
+    std::vector<std::string> paths;
+    paths.reserve(files.size());
+    for (const GitStatusEntry& file : files)
+        paths.push_back(file.path);
+
+    RestoreShelfFiles(shelf, paths);
 }
 
 void AppUi::CreateShelfFromInput()
