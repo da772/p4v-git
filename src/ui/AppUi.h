@@ -95,22 +95,22 @@ public:
 
 private:
     static RepositorySnapshot LoadRepositorySnapshot(const std::filesystem::path& selectedPath, bool discoverRepository, bool logCommands, uint64_t refreshGeneration);
-    static ShelfJobResult RunCreateShelfJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelfName, std::vector<std::string> files);
-    static ShelfJobResult RunCreateTargetBranchJob(const std::filesystem::path& repoRoot, std::string baseBranch, std::string newBranch);
-    static ShelfJobResult RunSelectTargetBranchJob(const std::filesystem::path& repoRoot, std::string targetBranch);
-    static ShelfJobResult RunShelveShelfJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelf, std::vector<std::string> files, std::string summary, std::string description);
-    static ShelfJobResult RunShelveAndSubmitShelfJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelf, std::vector<std::string> files, std::string summary, std::string description);
-    static ShelfJobResult RunSubmitShelfJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelf, std::vector<std::string> files);
-    static ShelfJobResult RunSubmitMainJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::vector<std::string> files, std::string summary, std::string description);
-    static ShelfJobResult RunPullMainJob(const std::filesystem::path& repoRoot, std::string targetBranch);
-    static ShelfJobResult RunDeleteShelfJob(const std::filesystem::path& repoRoot, std::string shelf);
-    static ShelfJobResult RunRevertShelfFileJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelf, std::string file);
-    static ShelfJobResult RunRevertShelfFilesJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelf, std::vector<std::string> files);
-    static ShelfJobResult RunRevertActiveFileJob(const std::filesystem::path& repoRoot, std::string shelf, std::string file);
-    static ShelfJobResult RunRevertActiveFilesJob(const std::filesystem::path& repoRoot, std::string shelf, std::vector<std::string> files);
-    static ShelfJobResult RunRestoreShelfFileJob(const std::filesystem::path& repoRoot, std::string shelf, std::string file);
-    static ShelfJobResult RunRestoreShelfFilesJob(const std::filesystem::path& repoRoot, std::string shelf, std::vector<std::string> files);
-    static void RunOpenFileDiffJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string file);
+    static ShelfJobResult RunCreateShelfJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& shelfName, const std::vector<std::string>& files);
+    static ShelfJobResult RunCreateTargetBranchJob(const std::filesystem::path& repoRoot, const std::string& baseBranch, const std::string& newBranch);
+    static ShelfJobResult RunSelectTargetBranchJob(const std::filesystem::path& repoRoot, const std::string& targetBranch);
+    static ShelfJobResult RunShelveShelfJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& shelf, const std::vector<std::string>& files, const std::string& summary, const std::string& description);
+    static ShelfJobResult RunShelveAndSubmitShelfJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& shelf, const std::vector<std::string>& files, const std::string& summary, const std::string& description);
+    static ShelfJobResult RunSubmitShelfJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& shelf, const std::vector<std::string>& files);
+    static ShelfJobResult RunSubmitMainJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::vector<std::string>& files, const std::string& summary, const std::string& description);
+    static ShelfJobResult RunPullMainJob(const std::filesystem::path& repoRoot, const std::string& targetBranch);
+    static ShelfJobResult RunDeleteShelfJob(const std::filesystem::path& repoRoot, const std::string& shelf);
+    static ShelfJobResult RunRevertShelfFileJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& shelf, const std::string& file);
+    static ShelfJobResult RunRevertShelfFilesJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& shelf, const std::vector<std::string>& files);
+    static ShelfJobResult RunRevertActiveFileJob(const std::filesystem::path& repoRoot, const std::string& shelf, const std::string& file);
+    static ShelfJobResult RunRevertActiveFilesJob(const std::filesystem::path& repoRoot, const std::string& shelf, const std::vector<std::string>& files);
+    static ShelfJobResult RunRestoreShelfFileJob(const std::filesystem::path& repoRoot, const std::string& shelf, const std::string& file);
+    static ShelfJobResult RunRestoreShelfFilesJob(const std::filesystem::path& repoRoot, const std::string& shelf, const std::vector<std::string>& files);
+    static void RunOpenFileDiffJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& file);
 
     void PollAsyncOperations();
     void ApplyRepositorySnapshot(const RepositorySnapshot& snapshot);
@@ -118,14 +118,14 @@ private:
     void StartShelfJob(std::string shelf, std::string label, std::future<ShelfJobResult> future);
     bool IsShelfBusy(std::string_view shelf) const;
     std::string ShelfBusyLabel(std::string_view shelf) const;
-    void RequestConfirmation(ConfirmationAction action, std::string shelf, std::string file);
-    void RequestConfirmation(ConfirmationAction action, std::string shelf, std::vector<std::string> files);
+    void RequestConfirmation(ConfirmationAction action, std::string_view shelf, std::string_view file);
+    void RequestConfirmation(ConfirmationAction action, std::string_view shelf, const std::vector<std::string>& files);
     void DrawConfirmationPopup();
     void ConfirmPendingAction();
     void ClearPendingConfirmation();
     void OpenMainSubmitPopup();
     void DrawMainSubmitPopup();
-    void OpenShelvePopup(std::string shelf, bool submitAfterShelve = false);
+    void OpenShelvePopup(std::string_view shelf, bool submitAfterShelve = false);
     void DrawShelvePopup();
     void OpenCreateShelfPopup();
     void DrawCreateShelfPopup();
@@ -181,7 +181,7 @@ private:
     void RestoreShelfFiles(const std::string& shelf, const std::vector<GitStatusEntry>& files);
     void CreateShelfFromInput();
     void CreateTargetBranchFromInput();
-    void SelectTargetBranch(std::string branch);
+    void SelectTargetBranch(const std::string& branch);
     void ShelveShelf(const std::string& shelf);
     void ShelveAndSubmitShelf(const std::string& shelf);
     void SubmitShelf(const std::string& shelf);
