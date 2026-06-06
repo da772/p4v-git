@@ -4,9 +4,11 @@
 
 `p4v-git` is a cross-platform desktop Git client inspired by Perforce P4V. The goal is to provide a familiar workspace-oriented UI for browsing a repository, organizing active file changes into shelves, reviewing shelf diffs, opening/merging pull requests, and submitting changes back to a selected target branch.
 
-Current version: `0.1.28`
+Current version: `0.2.0`
 
 The application is built with C++20, CMake, GLFW, Vulkan, and Dear ImGui docking.
+
+![p4v-git application screenshot](docs/images/p4v-git-app.png)
 
 ## Features
 
@@ -20,13 +22,32 @@ The application is built with C++20, CMake, GLFW, Vulkan, and Dear ImGui docking
 ## Prerequisites
 
 - CMake 3.24 or newer
-- A C++20 compiler
-  - Windows: Visual Studio 2022 or newer
-  - macOS: Xcode command line tools or Apple Clang
-  - Linux: GCC or Clang
-- Vulkan SDK and loader
-  - Windows/macOS: install the LunarG Vulkan SDK and ensure `VULKAN_SDK` is set
-  - Linux: install Vulkan development packages for your distribution
+- Git command line client, including access to `git` on `PATH`
+- curl command line client, including access to `curl` on `PATH`
+- Vulkan SDK or Vulkan development packages
+- A C++20 compiler and platform build tools
+  - Linux: Clang, clang++, Ninja, pkg-config, Vulkan loader/dev headers, X11 and Wayland development packages
+  - Windows: Visual Studio 2022 or newer with the Desktop development with C++ workload, Windows SDK, and LunarG Vulkan SDK with `VULKAN_SDK` set
+  - macOS: Xcode command line tools or Apple Clang and the LunarG Vulkan SDK with `VULKAN_SDK` set
+- Optional: VS Code command line launcher (`code`) for opening file diffs and merge/review folders from the app
+
+Ubuntu/Debian dependency example:
+
+```sh
+sudo apt-get update
+sudo apt-get install -y \
+  git \
+  curl \
+  cmake \
+  clang \
+  ninja-build \
+  pkg-config \
+  libvulkan-dev \
+  xorg-dev \
+  libwayland-dev \
+  wayland-protocols \
+  libxkbcommon-dev
+```
 
 ## Setup
 
