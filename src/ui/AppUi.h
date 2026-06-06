@@ -105,8 +105,11 @@ private:
     static ShelfJobResult RunPullMainJob(const std::filesystem::path& repoRoot, std::string targetBranch);
     static ShelfJobResult RunDeleteShelfJob(const std::filesystem::path& repoRoot, std::string shelf);
     static ShelfJobResult RunRevertShelfFileJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelf, std::string file);
+    static ShelfJobResult RunRevertShelfFilesJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string shelf, std::vector<std::string> files);
     static ShelfJobResult RunRevertActiveFileJob(const std::filesystem::path& repoRoot, std::string shelf, std::string file);
+    static ShelfJobResult RunRevertActiveFilesJob(const std::filesystem::path& repoRoot, std::string shelf, std::vector<std::string> files);
     static ShelfJobResult RunRestoreShelfFileJob(const std::filesystem::path& repoRoot, std::string shelf, std::string file);
+    static ShelfJobResult RunRestoreShelfFilesJob(const std::filesystem::path& repoRoot, std::string shelf, std::vector<std::string> files);
     static void RunOpenFileDiffJob(const std::filesystem::path& repoRoot, std::string targetBranch, std::string file);
 
     void PollAsyncOperations();
@@ -116,6 +119,7 @@ private:
     bool IsShelfBusy(std::string_view shelf) const;
     std::string ShelfBusyLabel(std::string_view shelf) const;
     void RequestConfirmation(ConfirmationAction action, std::string shelf, std::string file);
+    void RequestConfirmation(ConfirmationAction action, std::string shelf, std::vector<std::string> files);
     void DrawConfirmationPopup();
     void ConfirmPendingAction();
     void ClearPendingConfirmation();
@@ -142,7 +146,7 @@ private:
     void DrawShelfList();
     void DrawShelfPanel(const std::string& shelf, bool isMainShelf);
     void DrawShelfFile(const std::string& shelf, const std::vector<std::string>& files, size_t fileIndex);
-    void DrawShelfCommittedFile(const std::string& shelf, const GitStatusEntry& file);
+    void DrawShelfCommittedFile(const std::string& shelf, const std::vector<GitStatusEntry>& files, size_t fileIndex);
     void SelectShelf(std::string_view shelf);
     void ClearSelectedShelf();
     void SetShelfLink(std::string_view shelf, std::string url);
@@ -162,12 +166,18 @@ private:
     void ClearActiveFileSelection();
     void PruneSelectedActiveFiles();
     void SelectActiveFile(const std::string& shelf, const std::vector<std::string>& files, size_t fileIndex);
+    bool IsShelfFileSelected(std::string_view shelf, std::string_view file) const;
+    std::vector<std::string> SelectedShelfFilesForShelf(std::string_view shelf, std::string_view fallbackFile) const;
+    void SelectShelfFile(const std::string& shelf, const std::vector<GitStatusEntry>& files, size_t fileIndex);
     void MoveCheckedOutFile(std::string_view payload, std::string_view toShelf);
     void RevertCheckedOutFile(const std::string& shelf, const std::string& file);
     void RevertCheckedOutFiles(const std::string& shelf, const std::vector<std::string>& files);
+    void RevertCheckedOutFilesConfirmed(const std::string& shelf, const std::vector<std::string>& files);
     void OpenFileDiff(const std::string& file);
     void RevertShelfFile(const std::string& shelf, const std::string& file);
+    void RevertShelfFiles(const std::string& shelf, const std::vector<std::string>& files);
     void RestoreShelfFile(const std::string& shelf, const std::string& file);
+    void RestoreShelfFiles(const std::string& shelf, const std::vector<std::string>& files);
     void RestoreShelfFiles(const std::string& shelf, const std::vector<GitStatusEntry>& files);
     void CreateShelfFromInput();
     void CreateTargetBranchFromInput();
@@ -218,6 +228,7 @@ private:
     ConfirmationAction m_confirmationAction = ConfirmationAction::None;
     std::string m_confirmationShelf;
     std::string m_confirmationFile;
+    std::vector<std::string> m_confirmationFiles;
     bool m_openConfirmationPopup = false;
     bool m_openMainSubmitPopup = false;
     bool m_openShelvePopup = false;
@@ -233,6 +244,10 @@ private:
     std::vector<std::string> m_selectedActiveFiles;
     size_t m_lastSelectedActiveFileIndex = 0;
     bool m_hasLastSelectedActiveFileIndex = false;
+    std::string m_selectedShelfFileShelf;
+    std::vector<std::string> m_selectedShelfFiles;
+    size_t m_lastSelectedShelfFileIndex = 0;
+    bool m_hasLastSelectedShelfFileIndex = false;
     bool m_logAutoScroll = true;
 };
 }
