@@ -1,6 +1,15 @@
 p4v-git changelog
 ==================
 
+0.2.1
+- Added a File History tab in File Changes with per-file history loaded from `git log --follow`.
+- Added File History context actions from Workspace Explorer, active change lists, and committed shelf file lists.
+- Added history row actions to update the working file to a selected version, open the GitHub commit page, and diff against the current working version.
+- Added drag/drop between history rows to open a diff between two file versions.
+- Fixed history diffs for older entries by preserving the historical path for each commit, including rename-aware history.
+- Batched release build checks so changed `main` and open pull request heads are checked on a two-hour schedule instead of every update.
+- Added README CI status details and a liability disclaimer.
+
 0.2.0
 - Added a README application screenshot.
 - Expanded README prerequisites with required command-line tools, including `git` and `curl`.
