@@ -17,7 +17,7 @@ The application is built with C++20, CMake, GLFW, Vulkan, and Dear ImGui docking
 
 | Workflow | Result | Coverage |
 | --- | --- | --- |
-| Release Build Status | [![Release Build Status](https://github.com/da772/p4v-git/actions/workflows/release-build-check.yml/badge.svg)](https://github.com/da772/p4v-git/actions/workflows/release-build-check.yml) | Verifies Linux and Windows release builds on pull requests and pushes to `main`. |
+| Release Build Status | [![Release Build Status](https://github.com/da772/p4v-git/actions/workflows/release-build-check.yml/badge.svg)](https://github.com/da772/p4v-git/actions/workflows/release-build-check.yml) | Every two hours, verifies Linux and Windows release builds for changed `main` and open pull request SHAs that have not already passed. |
 | Build Release Artifacts | [![Build Release Artifacts](https://github.com/da772/p4v-git/actions/workflows/build-release.yml/badge.svg)](https://github.com/da772/p4v-git/actions/workflows/build-release.yml) | Manually builds Linux and Windows release executables and publishes a GitHub release. |
 
 ## Features
@@ -99,5 +99,9 @@ Run:
 # macOS
 ./build/p4v-git
 ```
+
+## Disclaimer
+
+This project is provided as-is, without warranty of any kind. Use it at your own risk. The maintainers are not responsible for code breakage, data loss, machine issues, workflow disruption, or other damages that may result from building, running, modifying, or using this software.
 
 See `CHANGELOG.txt` for versioned changes.

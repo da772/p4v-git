@@ -1,21 +1,131 @@
 name: Release Build Status
 
 on:
-  pull_request:
-  push:
-    branches:
-      - main
+  schedule:
+    - cron: "0 */2 * * *"
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Build all current targets even if their latest SHA already passed."
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
 
 jobs:
+  prepare-release-build-targets:
+    name: Prepare Release Build Targets
+    runs-on: ubuntu-latest
+    outputs:
+      count: ${{ steps.targets.outputs.count }}
+      targets: ${{ steps.targets.outputs.targets }}
+
+    steps:
+      - name: Find changed targets
+        id: targets
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const force = context.eventName === "workflow_dispatch" && core.getInput("force") === "true";
+            const statusContexts = [
+              "Release Build Status / Linux Release Build",
+              "Release Build Status / Windows Release Build"
+            ];
+
+            async function alreadyPassed(sha) {
+              const statuses = await github.paginate(github.rest.repos.listCommitStatusesForRef, {
+                owner,
+                repo,
+                ref: sha,
+                per_page: 100
+              });
+
+              return statusContexts.every((statusContext) => {
+                const status = statuses.find((candidate) => candidate.context === statusContext);
+                return status && status.state === "success";
+              });
+            }
+
+            const repository = await github.rest.repos.get({ owner, repo });
+            const defaultBranch = repository.data.default_branch;
+            const branch = await github.rest.repos.getBranch({ owner, repo, branch: defaultBranch });
+            const candidates = [{
+              kind: "main",
+              label: defaultBranch,
+              ref: defaultBranch,
+              sha: branch.data.commit.sha
+            }];
+
+            const pulls = await github.paginate(github.rest.pulls.list, {
+              owner,
+              repo,
+              state: "open",
+              per_page: 100
+            });
+
+            for (const pull of pulls) {
+              candidates.push({
+                kind: "pull_request",
+                label: `PR #${pull.number}`,
+                ref: `refs/pull/${pull.number}/head`,
+                sha: pull.head.sha
+              });
+            }
+
+            const targets = [];
+            for (const candidate of candidates) {
+              if (force || !(await alreadyPassed(candidate.sha))) {
+                targets.push(candidate);
+              }
+            }
+
+            core.setOutput("count", String(targets.length));
+            core.setOutput("targets", JSON.stringify(targets));
+
+            if (targets.length === 0) {
+              core.info("No changed targets need a release build.");
+            } else {
+              for (const target of targets) {
+                core.info(`Queued ${target.label} at ${target.sha}.`);
+              }
+            }
+
   linux-release-build:
     name: Linux Release Build
     runs-on: ubuntu-latest
+    needs:
+      - prepare-release-build-targets
+    if: needs.prepare-release-build-targets.outputs.count != '0'
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJson(needs.prepare-release-build-targets.outputs.targets) }}
 
     steps:
+      - name: Mark Linux build pending
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: "${{ matrix.target.sha }}",
+              state: "pending",
+              context: "Release Build Status / Linux Release Build",
+              description: "Linux release build queued for ${{ matrix.target.label }}.",
+              target_url: `${process.env.GITHUB_SERVER_URL}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            });
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: ${{ matrix.target.ref }}
           submodules: recursive
 
       - name: Install dependencies
@@ -42,14 +152,54 @@ jobs:
       - name: Build
         run: cmake --build build/linux-release --parallel
 
+      - name: Mark Linux build result
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          JOB_STATUS: ${{ job.status }}
+        with:
+          script: |
+            const state = process.env.JOB_STATUS === "success" ? "success" : "failure";
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: "${{ matrix.target.sha }}",
+              state,
+              context: "Release Build Status / Linux Release Build",
+              description: `Linux release build ${state} for ${{ matrix.target.label }}.`,
+              target_url: `${process.env.GITHUB_SERVER_URL}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            });
+
   windows-release-build:
     name: Windows Release Build
     runs-on: windows-latest
+    needs:
+      - prepare-release-build-targets
+    if: needs.prepare-release-build-targets.outputs.count != '0'
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJson(needs.prepare-release-build-targets.outputs.targets) }}
 
     steps:
+      - name: Mark Windows build pending
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: "${{ matrix.target.sha }}",
+              state: "pending",
+              context: "Release Build Status / Windows Release Build",
+              description: "Windows release build queued for ${{ matrix.target.label }}.",
+              target_url: `${process.env.GITHUB_SERVER_URL}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            });
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: ${{ matrix.target.ref }}
           submodules: recursive
 
       - name: Install Vulkan SDK
@@ -65,10 +215,29 @@ jobs:
       - name: Build
         run: cmake --build build/windows-release --config Release --parallel
 
+      - name: Mark Windows build result
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          JOB_STATUS: ${{ job.status }}
+        with:
+          script: |
+            const state = process.env.JOB_STATUS === "success" ? "success" : "failure";
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: "${{ matrix.target.sha }}",
+              state,
+              context: "Release Build Status / Windows Release Build",
+              description: `Windows release build ${state} for ${{ matrix.target.label }}.`,
+              target_url: `${process.env.GITHUB_SERVER_URL}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            });
+
   release-builds-successful:
     name: Release Builds Successful
     runs-on: ubuntu-latest
     needs:
+      - prepare-release-build-targets
       - linux-release-build
       - windows-release-build
     if: always()
@@ -76,9 +245,21 @@ jobs:
     steps:
       - name: Require successful release builds
         env:
+          TARGET_COUNT: ${{ needs.prepare-release-build-targets.outputs.count }}
+          PREPARE_RESULT: ${{ needs.prepare-release-build-targets.result }}
           LINUX_RESULT: ${{ needs.linux-release-build.result }}
           WINDOWS_RESULT: ${{ needs.windows-release-build.result }}
         run: |
+          if [ "$PREPARE_RESULT" != "success" ]; then
+            echo "Release build target preparation result: $PREPARE_RESULT"
+            exit 1
+          fi
+
+          if [ "$TARGET_COUNT" = "0" ]; then
+            echo "No changed targets needed a release build."
+            exit 0
+          fi
+
           if [ "$LINUX_RESULT" != "success" ] || [ "$WINDOWS_RESULT" != "success" ]; then
             echo "Linux Release Build result: $LINUX_RESULT"
             echo "Windows Release Build result: $WINDOWS_RESULT"
