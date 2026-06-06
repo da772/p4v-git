@@ -57,6 +57,10 @@ extern bool Selectable(std::string_view label, bool selected, bool enabled = tru
 extern void EndCombo();
 extern void SameLine();
 extern void Separator();
+extern bool BeginTabBar(std::string_view id);
+extern void EndTabBar();
+extern bool BeginTabItem(std::string_view label, bool selected = false);
+extern void EndTabItem();
 extern bool BeginTreeNode(std::string_view label, bool autoOpen = false);
 extern void EndTreeNode();
 extern void TreeLeaf(std::string_view label);
