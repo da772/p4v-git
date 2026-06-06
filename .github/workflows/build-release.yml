@@ -1,0 +1,88 @@
+name: Build Release Artifacts
+
+on:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    name: Linux Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang \
+            ninja-build \
+            pkg-config \
+            libvulkan-dev \
+            xorg-dev \
+            libwayland-dev \
+            wayland-protocols \
+            libxkbcommon-dev
+
+      - name: Configure
+        run: >
+          cmake -S . -B build/linux-release
+          -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_C_COMPILER=clang
+          -DCMAKE_CXX_COMPILER=clang++
+
+      - name: Build
+        run: cmake --build build/linux-release --parallel
+
+      - name: Prepare artifact
+        run: |
+          mkdir -p artifacts/linux
+          cp build/linux-release/p4v-git artifacts/linux/p4v-git
+          chmod +x artifacts/linux/p4v-git
+
+      - name: Upload Linux executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: p4v-git-linux-release
+          path: artifacts/linux/p4v-git
+          if-no-files-found: error
+
+  windows:
+    name: Windows Release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Vulkan SDK
+        uses: humbletim/setup-vulkan-sdk@v1.2.1
+        with:
+          vulkan-query-version: latest
+          vulkan-components: Vulkan-Headers, Vulkan-Loader
+          vulkan-use-cache: true
+
+      - name: Configure
+        run: cmake -S . -B build/windows-release -G "Visual Studio 17 2022" -A x64
+
+      - name: Build
+        run: cmake --build build/windows-release --config Release --parallel
+
+      - name: Prepare artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts/windows | Out-Null
+          Copy-Item build/windows-release/Release/p4v-git.exe artifacts/windows/p4v-git.exe
+
+      - name: Upload Windows executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: p4v-git-windows-release
+          path: artifacts/windows/p4v-git.exe
+          if-no-files-found: error
