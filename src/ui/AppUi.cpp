@@ -9,7 +9,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cstdlib>
 #include <filesystem>
 #include <future>
 #include <iostream>
@@ -76,19 +75,6 @@ static void CopyTextToBuffer(std::string_view text, char* buffer, size_t bufferS
     std::fill(buffer, buffer + bufferSize, '\0');
     const size_t copySize = std::min(text.size(), bufferSize - 1);
     std::copy_n(text.data(), copySize, buffer);
-}
-
-static std::filesystem::path HomeDirectory()
-{
-#if defined(_WIN32)
-    if (const char* userProfile = std::getenv("USERPROFILE"); userProfile != nullptr && userProfile[0] != '\0')
-        return userProfile;
-#endif
-
-    if (const char* home = std::getenv("HOME"); home != nullptr && home[0] != '\0')
-        return home;
-
-    return std::filesystem::current_path();
 }
 
 static std::string DirectoryPickerLabel(const std::filesystem::path& path)
@@ -1149,7 +1135,6 @@ void AppUi::OpenDirectoryPicker()
         initialPath = std::filesystem::current_path();
 
     SetDirectoryPickerPath(initialPath);
-    m_directoryPickerSelection.clear();
     m_directoryPickerError.clear();
     m_openDirectoryPickerPopup = true;
 }
@@ -1167,9 +1152,7 @@ void AppUi::SetDirectoryPickerPath(const std::filesystem::path& path)
     }
 
     m_directoryPickerPath = selectedPath;
-    m_directoryPickerSelection.clear();
     m_directoryPickerError.clear();
-    CopyTextToBuffer(m_directoryPickerPath.string(), m_directoryPickerPathInput.data(), m_directoryPickerPathInput.size());
 }
 
 void AppUi::DrawDirectoryPicker()
@@ -1186,33 +1169,11 @@ void AppUi::DrawDirectoryPicker()
 
     ui::widgets::Text("Folder");
     ui::widgets::Text(m_directoryPickerPath.string());
-    if (!m_directoryPickerSelection.empty())
-        ui::widgets::Text("Selected: " + m_directoryPickerSelection.string());
     if (!m_directoryPickerError.empty())
         ui::widgets::Text(m_directoryPickerError);
 
     ui::widgets::Separator();
-    ui::widgets::SetNextItemWidth(520.0f);
-    ui::widgets::InputText("Path", m_directoryPickerPathInput.data(), m_directoryPickerPathInput.size());
-
-    if (ui::widgets::Button("Go"))
-        SetDirectoryPickerPath(m_directoryPickerPathInput.data());
-
-    ui::widgets::SameLine();
-    if (ui::widgets::Button("Home"))
-        SetDirectoryPickerPath(HomeDirectory());
-
-    ui::widgets::SameLine();
-    if (ui::widgets::Button("Current"))
-        SetDirectoryPickerPath(std::filesystem::current_path());
-
-    const std::filesystem::path parentPath = m_directoryPickerPath.parent_path();
-    const bool canGoUp = !parentPath.empty() && parentPath != m_directoryPickerPath;
-    ui::widgets::SameLine();
-    ui::widgets::BeginDisabled(!canGoUp);
-    if (ui::widgets::Button("Up"))
-        SetDirectoryPickerPath(parentPath);
-    ui::widgets::EndDisabled();
+    DrawDirectoryPickerBreadcrumb();
 
     ui::widgets::Separator();
 
@@ -1239,24 +1200,16 @@ void AppUi::DrawDirectoryPicker()
     for (const std::filesystem::directory_entry& directory : directories)
     {
         const std::filesystem::path directoryPath = directory.path();
-        const bool selected = directoryPath == m_directoryPickerSelection;
         const std::string label = DirectoryPickerLabel(directoryPath) + "##directory-picker/" + directoryPath.string();
-        if (ui::widgets::Selectable(label, selected))
-            m_directoryPickerSelection = directoryPath;
+        if (ui::widgets::Selectable(label, false))
+            SetDirectoryPickerPath(directoryPath);
     }
     ui::widgets::EndScrollRegion();
 
     ui::widgets::Separator();
-    ui::widgets::BeginDisabled(m_directoryPickerSelection.empty());
-    if (ui::widgets::Button("Open"))
-        SetDirectoryPickerPath(m_directoryPickerSelection);
-    ui::widgets::EndDisabled();
-
-    ui::widgets::SameLine();
-    const std::filesystem::path selectedPath = m_directoryPickerSelection.empty() ? m_directoryPickerPath : m_directoryPickerSelection;
-    if (ui::widgets::Button("Select Folder"))
+    if (ui::widgets::Button("Confirm"))
     {
-        UseSourcePath(selectedPath);
+        UseSourcePath(m_directoryPickerPath);
         ui::widgets::CloseCurrentPopup();
     }
 
@@ -1270,13 +1223,51 @@ void AppUi::DrawDirectoryPicker()
     ui::widgets::EndModal();
 }
 
+void AppUi::DrawDirectoryPickerBreadcrumb()
+{
+    const std::filesystem::path rootPath = m_directoryPickerPath.root_path();
+    std::filesystem::path currentPath = rootPath;
+    bool hasSegment = false;
+
+    if (!rootPath.empty())
+    {
+        const std::string rootLabel = m_directoryPickerPath.root_name().empty() ? rootPath.string() : m_directoryPickerPath.root_name().string();
+        if (ui::widgets::Link(rootLabel))
+            SetDirectoryPickerPath(rootPath);
+        hasSegment = true;
+    }
+
+    for (const std::filesystem::path& segment : m_directoryPickerPath.relative_path())
+    {
+        if (segment.empty())
+            continue;
+
+        if (currentPath.empty())
+            currentPath = segment;
+        else
+            currentPath /= segment;
+
+        if (hasSegment)
+        {
+            ui::widgets::SameLine();
+            ui::widgets::Text("->");
+            ui::widgets::SameLine();
+        }
+
+        const std::string label = "[" + segment.string() + "]";
+        if (ui::widgets::Link(label))
+            SetDirectoryPickerPath(currentPath);
+        hasSegment = true;
+    }
+}
+
 void AppUi::DrawWorkspaceExplorer()
 {
     if (ui::widgets::BeginWindow("Workspace Explorer"))
     {
         ui::widgets::InputText("Source Folder", m_sourcePathInput.data(), m_sourcePathInput.size());
 
-        if (ui::widgets::Button("Use Folder"))
+        if (ui::widgets::Button("Confirm"))
             UseSourcePath(m_sourcePathInput.data());
 
         ui::widgets::SameLine();
