@@ -1,6 +1,9 @@
 p4v-git changelog
 ==================
 
+0.3.0
+- Bumped the project version to 0.3.0.
+
 0.2.5
 - Changed the Linux Ninja preset to generate Ninja files directly in `build/` with multi-config Debug/Release outputs.
 - Added direct Ninja config targets such as `ninja -C build Debug`, `ninja -C build Release`, and `ninja -C build Rel`.
