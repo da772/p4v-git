@@ -1,6 +1,11 @@
 p4v-git changelog
 ==================
 
+0.2.5
+- Changed the Linux Ninja preset to generate Ninja files directly in `build/` with multi-config Debug/Release outputs.
+- Added direct Ninja config targets such as `ninja -C build Debug`, `ninja -C build Release`, and `ninja -C build Rel`.
+- Updated README build prerequisites so Ninja is optional instead of required.
+
 0.2.4
 - Added Ctrl+E, Ctrl+R, Ctrl+D, and Ctrl+H file shortcuts for checkout, revert, diff, and history actions.
 - Displayed file action shortcut labels in Workspace Explorer, active change, and committed shelf context menus.

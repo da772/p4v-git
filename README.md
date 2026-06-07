@@ -7,7 +7,7 @@
 
 `p4v-git` is a cross-platform desktop Git client inspired by Perforce P4V. The goal is to provide a familiar workspace-oriented UI for browsing a repository, organizing active file changes into shelves, reviewing shelf diffs, opening/merging pull requests, and submitting changes back to a selected target branch.
 
-Current version: `0.2.4`
+Current version: `0.2.5`
 
 The application is built with C++20, CMake, GLFW, Vulkan, and Dear ImGui docking.
 
@@ -36,9 +36,10 @@ The application is built with C++20, CMake, GLFW, Vulkan, and Dear ImGui docking
 - curl command line client, including access to `curl` on `PATH`
 - Vulkan SDK or Vulkan development packages
 - A C++20 compiler and platform build tools
-  - Linux: Clang, clang++, Ninja, pkg-config, Vulkan loader/dev headers, X11 and Wayland development packages
+  - Linux: Clang, clang++, pkg-config, Vulkan loader/dev headers, X11 and Wayland development packages
   - Windows: Visual Studio 2022 or newer with the Desktop development with C++ workload, Windows SDK, and LunarG Vulkan SDK with `VULKAN_SDK` set
   - macOS: Xcode command line tools or Apple Clang and the LunarG Vulkan SDK with `VULKAN_SDK` set
+- Optional: Ninja for the Linux preset and direct `ninja -C build Debug` style builds
 - Optional: VS Code command line launcher (`code`) for opening file diffs and merge/review folders from the app
 
 Ubuntu/Debian dependency example:
@@ -50,7 +51,6 @@ sudo apt-get install -y \
   curl \
   cmake \
   clang \
-  ninja-build \
   pkg-config \
   libvulkan-dev \
   xorg-dev \
@@ -70,21 +70,26 @@ git submodule update --init --recursive
 Configure:
 
 ```sh
-# Linux
-cmake --preset linux-clang-ninja
-
-# Other platforms
+# Default generator
 cmake -S . -B build
+
+# Optional Linux Ninja generator
+cmake --preset linux-clang-ninja
 ```
 
 Build:
 
 ```sh
-# Linux
-cmake --build --preset linux-clang-ninja
-
-# Other platforms
+# Any generator
 cmake --build build --config Debug
+
+# Optional Ninja config targets
+ninja -C build Debug
+ninja -C build Release
+
+# Or from inside build/
+ninja Debug
+ninja Release
 ```
 
 Run:
@@ -94,7 +99,7 @@ Run:
 .\build\Debug\p4v-git.exe
 
 # Linux
-./build/linux-clang-ninja/p4v-git
+./build/Debug/p4v-git
 
 # macOS
 ./build/p4v-git

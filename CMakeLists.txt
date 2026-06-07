@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(p4v-git
-    VERSION 0.2.4
+    VERSION 0.2.5
     DESCRIPTION "A cross-platform P4V-inspired Git desktop client with shelves, workspace changes, and review workflows"
     LANGUAGES CXX
 )
@@ -218,6 +218,34 @@ if(APPLE)
 endif()
 set_target_properties(imgui PROPERTIES FOLDER "External")
 set_target_properties(glfw PROPERTIES FOLDER "External")
+
+if(CMAKE_GENERATOR MATCHES "Ninja Multi-Config")
+    add_custom_target(Debug
+        COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}" --config Debug --target p4v-git --parallel
+        USES_TERMINAL
+        COMMENT "Building Debug"
+    )
+    add_custom_target(Release
+        COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}" --config Release --target p4v-git --parallel
+        USES_TERMINAL
+        COMMENT "Building Release"
+    )
+    add_custom_target(Rel
+        COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}" --config Release --target p4v-git --parallel
+        USES_TERMINAL
+        COMMENT "Building Release"
+    )
+    add_custom_target(RelWithDebInfo
+        COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}" --config RelWithDebInfo --target p4v-git --parallel
+        USES_TERMINAL
+        COMMENT "Building RelWithDebInfo"
+    )
+    add_custom_target(MinSizeRel
+        COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}" --config MinSizeRel --target p4v-git --parallel
+        USES_TERMINAL
+        COMMENT "Building MinSizeRel"
+    )
+endif()
 
 if(UNIX AND NOT APPLE)
     configure_file(

@@ -9,28 +9,19 @@
     {
       "name": "linux-clang-ninja",
       "displayName": "Linux Clang Ninja",
-      "description": "Configure on Linux with Clang, clang++, and the Ninja generator.",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/linux-clang-ninja",
+      "description": "Configure on Linux with Clang, clang++, and Ninja Multi-Config in build/.",
+      "generator": "Ninja Multi-Config",
+      "binaryDir": "${sourceDir}/build",
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
         "rhs": "Linux"
       },
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CONFIGURATION_TYPES": "Debug;Release;RelWithDebInfo;MinSizeRel",
         "CMAKE_C_COMPILER": "clang",
         "CMAKE_CXX_COMPILER": "clang++"
       }
-    }
-  ],
-  "buildPresets": [
-    {
-      "name": "linux-clang-ninja",
-      "displayName": "Linux Clang Ninja",
-      "description": "Build the Linux Clang/Ninja tree with parallel jobs.",
-      "configurePreset": "linux-clang-ninja",
-      "jobs": 16
     }
   ]
 }
