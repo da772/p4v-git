@@ -224,12 +224,11 @@ jobs:
       - prepare-release-build-targets
       - linux-release-build
       - windows-release-build
-    if: always()
+    if: always() && needs.prepare-release-build-targets.outputs.count != '0'
 
     steps:
       - name: Require successful release builds
         env:
-          TARGET_COUNT: ${{ needs.prepare-release-build-targets.outputs.count }}
           PREPARE_RESULT: ${{ needs.prepare-release-build-targets.result }}
           LINUX_RESULT: ${{ needs.linux-release-build.result }}
           WINDOWS_RESULT: ${{ needs.windows-release-build.result }}
@@ -237,11 +236,6 @@ jobs:
           if [ "$PREPARE_RESULT" != "success" ]; then
             echo "Release build target preparation result: $PREPARE_RESULT"
             exit 1
-          fi
-
-          if [ "$TARGET_COUNT" = "0" ]; then
-            echo "No changed targets needed a release build."
-            exit 0
           fi
 
           if [ "$LINUX_RESULT" != "success" ] || [ "$WINDOWS_RESULT" != "success" ]; then
