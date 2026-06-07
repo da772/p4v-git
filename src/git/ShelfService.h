@@ -39,8 +39,8 @@ public:
     bool RestoreFileFromShelfToWorkingTree(std::string_view shelfBranch, std::string_view file);
     bool UndoLocalFileChanges(std::string_view file);
     bool OpenFileDiff(std::string_view file) const;
-    bool OpenFileVersionDiff(std::string_view file, std::string_view leftCommit, std::string_view rightCommit) const;
-    bool OpenFileVersionToWorkingDiff(std::string_view file, std::string_view commit) const;
+    bool OpenFileVersionDiff(std::string_view leftFile, std::string_view leftCommit, std::string_view rightFile, std::string_view rightCommit) const;
+    bool OpenFileVersionToWorkingDiff(std::string_view historyFile, std::string_view workingFile, std::string_view commit) const;
     bool SubmitMain(const std::vector<std::string>& files, std::string_view summary, std::string_view description);
     MainSyncStatus RefreshMain(bool logCommand = true) const;
     bool PullMain();

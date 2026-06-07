@@ -50,21 +50,58 @@ static std::optional<std::string> CommittedShelfForFile(const std::vector<ShelfC
     return matchingShelf;
 }
 
-static std::string BuildHistoryDragPayload(std::string_view file, std::string_view commit)
+struct HistoryDragPayload
+{
+    std::string file;
+    std::string path;
+    std::string commit;
+};
+
+static std::string BuildHistoryDragPayload(std::string_view file, std::string_view path, std::string_view commit)
 {
     std::string payload(file);
+    payload += '\n';
+    payload += path;
     payload += '\n';
     payload += commit;
     return payload;
 }
 
-static std::optional<std::pair<std::string, std::string>> ParseHistoryDragPayload(std::string_view payload)
+static std::optional<HistoryDragPayload> ParseHistoryDragPayload(std::string_view payload)
 {
-    const size_t separator = payload.find('\n');
-    if (separator == std::string_view::npos || separator == 0 || separator + 1 >= payload.size())
+    const size_t firstSeparator = payload.find('\n');
+    if (firstSeparator == std::string_view::npos || firstSeparator == 0 || firstSeparator + 1 >= payload.size())
         return std::nullopt;
 
-    return std::make_pair(std::string(payload.substr(0, separator)), std::string(payload.substr(separator + 1)));
+    const size_t secondSeparator = payload.find('\n', firstSeparator + 1);
+    if (secondSeparator == std::string_view::npos || secondSeparator == firstSeparator + 1 || secondSeparator + 1 >= payload.size())
+        return std::nullopt;
+
+    return HistoryDragPayload{
+        std::string(payload.substr(0, firstSeparator)),
+        std::string(payload.substr(firstSeparator + 1, secondSeparator - firstSeparator - 1)),
+        std::string(payload.substr(secondSeparator + 1)),
+    };
+}
+
+static void CopyTextToBuffer(std::string_view text, char* buffer, size_t bufferSize)
+{
+    if (bufferSize == 0)
+        return;
+
+    std::fill(buffer, buffer + bufferSize, '\0');
+    const size_t copySize = std::min(text.size(), bufferSize - 1);
+    std::copy_n(text.data(), copySize, buffer);
+}
+
+static std::string DirectoryPickerLabel(const std::filesystem::path& path)
+{
+    const std::string filename = path.filename().string();
+    if (!filename.empty())
+        return filename;
+
+    const std::string pathText = path.string();
+    return pathText.empty() ? std::string(".") : pathText;
 }
 
 static size_t AssignStatusFilesToWorkspaceState(RepositorySnapshot& snapshot)
@@ -426,22 +463,22 @@ void AppUi::RunOpenFileDiffJob(const std::filesystem::path& repoRoot, const std:
     shelfService.OpenFileDiff(file);
 }
 
-void AppUi::RunOpenFileHistoryCurrentDiffJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& file, const std::string& commit)
+void AppUi::RunOpenFileHistoryCurrentDiffJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& historyPath, const std::string& workingPath, const std::string& commit)
 {
     GitRepository repository(repoRoot);
     ShelfService shelfService;
     shelfService.SetRepository(&repository);
     shelfService.SetTargetBranch(targetBranch);
-    shelfService.OpenFileVersionToWorkingDiff(file, commit);
+    shelfService.OpenFileVersionToWorkingDiff(historyPath, workingPath, commit);
 }
 
-void AppUi::RunOpenFileHistoryVersionDiffJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& file, const std::string& leftCommit, const std::string& rightCommit)
+void AppUi::RunOpenFileHistoryVersionDiffJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& leftPath, const std::string& leftCommit, const std::string& rightPath, const std::string& rightCommit)
 {
     GitRepository repository(repoRoot);
     ShelfService shelfService;
     shelfService.SetRepository(&repository);
     shelfService.SetTargetBranch(targetBranch);
-    shelfService.OpenFileVersionDiff(file, leftCommit, rightCommit);
+    shelfService.OpenFileVersionDiff(leftPath, leftCommit, rightPath, rightCommit);
 }
 
 FileHistoryResult AppUi::RunLoadFileHistoryJob(const std::filesystem::path& repoRoot, const std::string& file)
@@ -470,8 +507,7 @@ ShelfJobResult AppUi::RunRestoreFileHistoryVersionJob(const std::filesystem::pat
 AppUi::AppUi()
 {
     const std::filesystem::path currentPath = std::filesystem::current_path();
-    const std::string currentPathText = currentPath.string();
-    currentPathText.copy(m_sourcePathInput.data(), std::min(currentPathText.size(), m_sourcePathInput.size() - 1));
+    CopyTextToBuffer(currentPath.string(), m_sourcePathInput.data(), m_sourcePathInput.size());
 }
 
 void AppUi::SetStdoutLog(const StdoutLog* stdoutLog)
@@ -1086,6 +1122,7 @@ void AppUi::Draw()
     DrawShelvePopup();
     DrawCreateShelfPopup();
     DrawCreateBranchPopup();
+    DrawDirectoryPicker();
 }
 
 void AppUi::DrawAppTitleBar()
@@ -1107,14 +1144,152 @@ void AppUi::DrawAppTitleBar()
         m_window->StartMoveDrag();
 }
 
+void AppUi::OpenDirectoryPicker()
+{
+    std::filesystem::path initialPath = m_hasSourcePath ? m_sourcePath : std::filesystem::path(m_sourcePathInput.data());
+    std::error_code error;
+    if (initialPath.empty() || !std::filesystem::exists(initialPath, error) || !std::filesystem::is_directory(initialPath, error))
+        initialPath = std::filesystem::current_path();
+
+    SetDirectoryPickerPath(initialPath);
+    m_directoryPickerError.clear();
+    m_openDirectoryPickerPopup = true;
+}
+
+void AppUi::SetDirectoryPickerPath(const std::filesystem::path& path)
+{
+    std::error_code error;
+    const std::filesystem::path canonicalPath = std::filesystem::weakly_canonical(path, error);
+    const std::filesystem::path selectedPath = error ? path : canonicalPath;
+
+    if (!std::filesystem::exists(selectedPath, error) || !std::filesystem::is_directory(selectedPath, error))
+    {
+        m_directoryPickerError = "Folder does not exist or is not a directory.";
+        return;
+    }
+
+    m_directoryPickerPath = selectedPath;
+    m_directoryPickerError.clear();
+}
+
+void AppUi::DrawDirectoryPicker()
+{
+    constexpr std::string_view popupId = "Choose Source Folder";
+    if (m_openDirectoryPickerPopup)
+    {
+        ui::widgets::OpenPopup(popupId);
+        m_openDirectoryPickerPopup = false;
+    }
+
+    if (!ui::widgets::BeginModal(popupId))
+        return;
+
+    ui::widgets::Text("Folder");
+    ui::widgets::Text(m_directoryPickerPath.string());
+    if (!m_directoryPickerError.empty())
+        ui::widgets::Text(m_directoryPickerError);
+
+    ui::widgets::Separator();
+    DrawDirectoryPickerBreadcrumb();
+
+    ui::widgets::Separator();
+
+    std::vector<std::filesystem::directory_entry> directories;
+    std::error_code error;
+    for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(m_directoryPickerPath, std::filesystem::directory_options::skip_permission_denied, error))
+    {
+        if (error)
+            break;
+
+        std::error_code entryError;
+        if (entry.is_directory(entryError))
+            directories.push_back(entry);
+    }
+
+    std::sort(directories.begin(), directories.end(), [](const auto& lhs, const auto& rhs) {
+        return DirectoryPickerLabel(lhs.path()) < DirectoryPickerLabel(rhs.path());
+    });
+
+    ui::widgets::BeginScrollRegion("DirectoryPickerScroll", 300.0f);
+    if (directories.empty())
+        ui::widgets::Text("No folders.");
+
+    for (const std::filesystem::directory_entry& directory : directories)
+    {
+        const std::filesystem::path directoryPath = directory.path();
+        const std::string label = DirectoryPickerLabel(directoryPath) + "##directory-picker/" + directoryPath.string();
+        if (ui::widgets::Selectable(label, false))
+            SetDirectoryPickerPath(directoryPath);
+    }
+    ui::widgets::EndScrollRegion();
+
+    ui::widgets::Separator();
+    if (ui::widgets::Button("Confirm"))
+    {
+        UseSourcePath(m_directoryPickerPath);
+        ui::widgets::CloseCurrentPopup();
+    }
+
+    ui::widgets::SameLine();
+    if (ui::widgets::Button("Cancel"))
+    {
+        m_directoryPickerError.clear();
+        ui::widgets::CloseCurrentPopup();
+    }
+
+    ui::widgets::EndModal();
+}
+
+void AppUi::DrawDirectoryPickerBreadcrumb()
+{
+    const std::filesystem::path rootPath = m_directoryPickerPath.root_path();
+    std::filesystem::path currentPath = rootPath;
+    bool hasSegment = false;
+
+    if (!rootPath.empty())
+    {
+        const std::string rootLabel = m_directoryPickerPath.root_name().empty() ? rootPath.string() : m_directoryPickerPath.root_name().string();
+        if (ui::widgets::Link(rootLabel))
+            SetDirectoryPickerPath(rootPath);
+        hasSegment = true;
+    }
+
+    for (const std::filesystem::path& segment : m_directoryPickerPath.relative_path())
+    {
+        if (segment.empty())
+            continue;
+
+        if (currentPath.empty())
+            currentPath = segment;
+        else
+            currentPath /= segment;
+
+        if (hasSegment)
+        {
+            ui::widgets::SameLine();
+            ui::widgets::Text("->");
+            ui::widgets::SameLine();
+        }
+
+        const std::string label = "[" + segment.string() + "]";
+        if (ui::widgets::Link(label))
+            SetDirectoryPickerPath(currentPath);
+        hasSegment = true;
+    }
+}
+
 void AppUi::DrawWorkspaceExplorer()
 {
     if (ui::widgets::BeginWindow("Workspace Explorer"))
     {
         ui::widgets::InputText("Source Folder", m_sourcePathInput.data(), m_sourcePathInput.size());
 
-        if (ui::widgets::Button("Use Folder"))
+        if (ui::widgets::Button("Confirm"))
             UseSourcePath(m_sourcePathInput.data());
+
+        ui::widgets::SameLine();
+        if (ui::widgets::Button("Browse..."))
+            OpenDirectoryPicker();
 
         ui::widgets::SameLine();
         if (ui::widgets::Button("Use Current Directory"))
@@ -1275,14 +1450,14 @@ void AppUi::DrawFileHistory()
             label += "  " + entry.summary;
 
         ui::widgets::TreeLeaf(label + "##history/" + entry.commit);
-        ui::widgets::DragDropSource("p4v-git-history", BuildHistoryDragPayload(m_fileHistoryFile, entry.commit), entry.shortCommit);
+        ui::widgets::DragDropSource("p4v-git-history", BuildHistoryDragPayload(m_fileHistoryFile, entry.path, entry.commit), entry.shortCommit);
 
         if (const std::optional<std::string> payload = ui::widgets::AcceptDragDropPayload("p4v-git-history"))
         {
-            const std::optional<std::pair<std::string, std::string>> draggedHistory = ParseHistoryDragPayload(*payload);
-            if (draggedHistory.has_value() && draggedHistory->first == m_fileHistoryFile && draggedHistory->second != entry.commit)
-                OpenFileHistoryVersionDiff(m_fileHistoryFile, draggedHistory->second, entry.commit);
-            else if (draggedHistory.has_value() && draggedHistory->first != m_fileHistoryFile)
+            const std::optional<HistoryDragPayload> draggedHistory = ParseHistoryDragPayload(*payload);
+            if (draggedHistory.has_value() && draggedHistory->file == m_fileHistoryFile && draggedHistory->commit != entry.commit)
+                OpenFileHistoryVersionDiff(draggedHistory->path, draggedHistory->commit, entry.path, entry.commit);
+            else if (draggedHistory.has_value() && draggedHistory->file != m_fileHistoryFile)
                 m_fileHistoryError = "Drop a history row from the same file.";
         }
 
@@ -1351,9 +1526,7 @@ void AppUi::UseSourcePath(const std::filesystem::path& path)
         return;
     }
 
-    const std::string pathText = selectedPath.string();
-    std::fill(m_sourcePathInput.begin(), m_sourcePathInput.end(), '\0');
-    pathText.copy(m_sourcePathInput.data(), std::min(pathText.size(), m_sourcePathInput.size() - 1));
+    CopyTextToBuffer(selectedPath.string(), m_sourcePathInput.data(), m_sourcePathInput.size());
 
     StartRepositoryLoad(selectedPath);
 }
@@ -2161,22 +2334,23 @@ void AppUi::OpenFileHistoryCurrentDiff(const GitFileHistoryEntry& entry)
 
     const std::filesystem::path repoRoot = m_sourcePath;
     const std::string targetBranch = m_targetBranch;
-    const std::string file = m_fileHistoryFile;
+    const std::string historyPath = entry.path.empty() ? m_fileHistoryFile : entry.path;
+    const std::string workingPath = m_fileHistoryFile;
     const std::string commit = entry.commit;
-    std::thread([repoRoot, targetBranch, file, commit]() {
-        RunOpenFileHistoryCurrentDiffJob(repoRoot, targetBranch, file, commit);
+    std::thread([repoRoot, targetBranch, historyPath, workingPath, commit]() {
+        RunOpenFileHistoryCurrentDiffJob(repoRoot, targetBranch, historyPath, workingPath, commit);
     }).detach();
 }
 
-void AppUi::OpenFileHistoryVersionDiff(const std::string& file, const std::string& leftCommit, const std::string& rightCommit)
+void AppUi::OpenFileHistoryVersionDiff(const std::string& leftPath, const std::string& leftCommit, const std::string& rightPath, const std::string& rightCommit)
 {
-    if (!m_repository.has_value() || file.empty() || leftCommit.empty() || rightCommit.empty() || leftCommit == rightCommit)
+    if (!m_repository.has_value() || leftPath.empty() || rightPath.empty() || leftCommit.empty() || rightCommit.empty() || leftCommit == rightCommit)
         return;
 
     const std::filesystem::path repoRoot = m_sourcePath;
     const std::string targetBranch = m_targetBranch;
-    std::thread([repoRoot, targetBranch, file, leftCommit, rightCommit]() {
-        RunOpenFileHistoryVersionDiffJob(repoRoot, targetBranch, file, leftCommit, rightCommit);
+    std::thread([repoRoot, targetBranch, leftPath, leftCommit, rightPath, rightCommit]() {
+        RunOpenFileHistoryVersionDiffJob(repoRoot, targetBranch, leftPath, leftCommit, rightPath, rightCommit);
     }).detach();
 }
 
