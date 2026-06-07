@@ -78,6 +78,7 @@ extern void CloseCurrentPopup();
 extern bool DragDropSource(std::string_view type, std::string_view payload, std::string_view label);
 extern std::optional<std::string> AcceptDragDropPayload(std::string_view type);
 extern void BeginScrollRegion(std::string_view id);
+extern void BeginScrollRegion(std::string_view id, float height);
 extern void BeginScrollRegion(std::string_view id, bool scrollToBottom);
 extern bool IsCurrentScrollRegionAtBottom();
 extern bool DidUserScrollCurrentRegion();

@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <filesystem>
 #include <future>
 #include <iostream>
@@ -65,6 +66,39 @@ static std::optional<std::pair<std::string, std::string>> ParseHistoryDragPayloa
         return std::nullopt;
 
     return std::make_pair(std::string(payload.substr(0, separator)), std::string(payload.substr(separator + 1)));
+}
+
+static void CopyTextToBuffer(std::string_view text, char* buffer, size_t bufferSize)
+{
+    if (bufferSize == 0)
+        return;
+
+    std::fill(buffer, buffer + bufferSize, '\0');
+    const size_t copySize = std::min(text.size(), bufferSize - 1);
+    std::copy_n(text.data(), copySize, buffer);
+}
+
+static std::filesystem::path HomeDirectory()
+{
+#if defined(_WIN32)
+    if (const char* userProfile = std::getenv("USERPROFILE"); userProfile != nullptr && userProfile[0] != '\0')
+        return userProfile;
+#endif
+
+    if (const char* home = std::getenv("HOME"); home != nullptr && home[0] != '\0')
+        return home;
+
+    return std::filesystem::current_path();
+}
+
+static std::string DirectoryPickerLabel(const std::filesystem::path& path)
+{
+    const std::string filename = path.filename().string();
+    if (!filename.empty())
+        return filename;
+
+    const std::string pathText = path.string();
+    return pathText.empty() ? std::string(".") : pathText;
 }
 
 static size_t AssignStatusFilesToWorkspaceState(RepositorySnapshot& snapshot)
@@ -470,8 +504,7 @@ ShelfJobResult AppUi::RunRestoreFileHistoryVersionJob(const std::filesystem::pat
 AppUi::AppUi()
 {
     const std::filesystem::path currentPath = std::filesystem::current_path();
-    const std::string currentPathText = currentPath.string();
-    currentPathText.copy(m_sourcePathInput.data(), std::min(currentPathText.size(), m_sourcePathInput.size() - 1));
+    CopyTextToBuffer(currentPath.string(), m_sourcePathInput.data(), m_sourcePathInput.size());
 }
 
 void AppUi::SetStdoutLog(const StdoutLog* stdoutLog)
@@ -1086,6 +1119,7 @@ void AppUi::Draw()
     DrawShelvePopup();
     DrawCreateShelfPopup();
     DrawCreateBranchPopup();
+    DrawDirectoryPicker();
 }
 
 void AppUi::DrawAppTitleBar()
@@ -1107,6 +1141,135 @@ void AppUi::DrawAppTitleBar()
         m_window->StartMoveDrag();
 }
 
+void AppUi::OpenDirectoryPicker()
+{
+    std::filesystem::path initialPath = m_hasSourcePath ? m_sourcePath : std::filesystem::path(m_sourcePathInput.data());
+    std::error_code error;
+    if (initialPath.empty() || !std::filesystem::exists(initialPath, error) || !std::filesystem::is_directory(initialPath, error))
+        initialPath = std::filesystem::current_path();
+
+    SetDirectoryPickerPath(initialPath);
+    m_directoryPickerSelection.clear();
+    m_directoryPickerError.clear();
+    m_openDirectoryPickerPopup = true;
+}
+
+void AppUi::SetDirectoryPickerPath(const std::filesystem::path& path)
+{
+    std::error_code error;
+    const std::filesystem::path canonicalPath = std::filesystem::weakly_canonical(path, error);
+    const std::filesystem::path selectedPath = error ? path : canonicalPath;
+
+    if (!std::filesystem::exists(selectedPath, error) || !std::filesystem::is_directory(selectedPath, error))
+    {
+        m_directoryPickerError = "Folder does not exist or is not a directory.";
+        return;
+    }
+
+    m_directoryPickerPath = selectedPath;
+    m_directoryPickerSelection.clear();
+    m_directoryPickerError.clear();
+    CopyTextToBuffer(m_directoryPickerPath.string(), m_directoryPickerPathInput.data(), m_directoryPickerPathInput.size());
+}
+
+void AppUi::DrawDirectoryPicker()
+{
+    constexpr std::string_view popupId = "Choose Source Folder";
+    if (m_openDirectoryPickerPopup)
+    {
+        ui::widgets::OpenPopup(popupId);
+        m_openDirectoryPickerPopup = false;
+    }
+
+    if (!ui::widgets::BeginModal(popupId))
+        return;
+
+    ui::widgets::Text("Folder");
+    ui::widgets::Text(m_directoryPickerPath.string());
+    if (!m_directoryPickerSelection.empty())
+        ui::widgets::Text("Selected: " + m_directoryPickerSelection.string());
+    if (!m_directoryPickerError.empty())
+        ui::widgets::Text(m_directoryPickerError);
+
+    ui::widgets::Separator();
+    ui::widgets::SetNextItemWidth(520.0f);
+    ui::widgets::InputText("Path", m_directoryPickerPathInput.data(), m_directoryPickerPathInput.size());
+
+    if (ui::widgets::Button("Go"))
+        SetDirectoryPickerPath(m_directoryPickerPathInput.data());
+
+    ui::widgets::SameLine();
+    if (ui::widgets::Button("Home"))
+        SetDirectoryPickerPath(HomeDirectory());
+
+    ui::widgets::SameLine();
+    if (ui::widgets::Button("Current"))
+        SetDirectoryPickerPath(std::filesystem::current_path());
+
+    const std::filesystem::path parentPath = m_directoryPickerPath.parent_path();
+    const bool canGoUp = !parentPath.empty() && parentPath != m_directoryPickerPath;
+    ui::widgets::SameLine();
+    ui::widgets::BeginDisabled(!canGoUp);
+    if (ui::widgets::Button("Up"))
+        SetDirectoryPickerPath(parentPath);
+    ui::widgets::EndDisabled();
+
+    ui::widgets::Separator();
+
+    std::vector<std::filesystem::directory_entry> directories;
+    std::error_code error;
+    for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(m_directoryPickerPath, std::filesystem::directory_options::skip_permission_denied, error))
+    {
+        if (error)
+            break;
+
+        std::error_code entryError;
+        if (entry.is_directory(entryError))
+            directories.push_back(entry);
+    }
+
+    std::sort(directories.begin(), directories.end(), [](const auto& lhs, const auto& rhs) {
+        return DirectoryPickerLabel(lhs.path()) < DirectoryPickerLabel(rhs.path());
+    });
+
+    ui::widgets::BeginScrollRegion("DirectoryPickerScroll", 300.0f);
+    if (directories.empty())
+        ui::widgets::Text("No folders.");
+
+    for (const std::filesystem::directory_entry& directory : directories)
+    {
+        const std::filesystem::path directoryPath = directory.path();
+        const bool selected = directoryPath == m_directoryPickerSelection;
+        const std::string label = DirectoryPickerLabel(directoryPath) + "##directory-picker/" + directoryPath.string();
+        if (ui::widgets::Selectable(label, selected))
+            m_directoryPickerSelection = directoryPath;
+    }
+    ui::widgets::EndScrollRegion();
+
+    ui::widgets::Separator();
+    ui::widgets::BeginDisabled(m_directoryPickerSelection.empty());
+    if (ui::widgets::Button("Open"))
+        SetDirectoryPickerPath(m_directoryPickerSelection);
+    ui::widgets::EndDisabled();
+
+    ui::widgets::SameLine();
+    const std::filesystem::path selectedPath = m_directoryPickerSelection.empty() ? m_directoryPickerPath : m_directoryPickerSelection;
+    if (ui::widgets::Button("Select Folder"))
+    {
+        UseSourcePath(selectedPath);
+        ui::widgets::CloseCurrentPopup();
+    }
+
+    ui::widgets::SameLine();
+    if (ui::widgets::Button("Cancel"))
+    {
+        m_directoryPickerError.clear();
+        ui::widgets::CloseCurrentPopup();
+    }
+
+    ui::widgets::EndModal();
+}
+
 void AppUi::DrawWorkspaceExplorer()
 {
     if (ui::widgets::BeginWindow("Workspace Explorer"))
@@ -1115,6 +1278,10 @@ void AppUi::DrawWorkspaceExplorer()
 
         if (ui::widgets::Button("Use Folder"))
             UseSourcePath(m_sourcePathInput.data());
+
+        ui::widgets::SameLine();
+        if (ui::widgets::Button("Browse..."))
+            OpenDirectoryPicker();
 
         ui::widgets::SameLine();
         if (ui::widgets::Button("Use Current Directory"))
@@ -1351,9 +1518,7 @@ void AppUi::UseSourcePath(const std::filesystem::path& path)
         return;
     }
 
-    const std::string pathText = selectedPath.string();
-    std::fill(m_sourcePathInput.begin(), m_sourcePathInput.end(), '\0');
-    pathText.copy(m_sourcePathInput.data(), std::min(pathText.size(), m_sourcePathInput.size() - 1));
+    CopyTextToBuffer(selectedPath.string(), m_sourcePathInput.data(), m_sourcePathInput.size());
 
     StartRepositoryLoad(selectedPath);
 }
