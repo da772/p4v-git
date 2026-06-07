@@ -672,12 +672,13 @@ bool ShelfService::OpenFileDiff(std::string_view file) const
     return result.Succeeded();
 }
 
-bool ShelfService::OpenFileVersionDiff(std::string_view file, std::string_view leftCommit, std::string_view rightCommit) const
+bool ShelfService::OpenFileVersionDiff(std::string_view leftFile, std::string_view leftCommit, std::string_view rightFile, std::string_view rightCommit) const
 {
-    if (m_repository == nullptr || file.empty() || leftCommit.empty() || rightCommit.empty())
+    if (m_repository == nullptr || leftFile.empty() || leftCommit.empty() || rightFile.empty() || rightCommit.empty())
         return false;
 
-    const std::string fileText = std::string(file);
+    const std::string leftFileText = std::string(leftFile);
+    const std::string rightFileText = std::string(rightFile);
     const std::string leftCommitText = std::string(leftCommit);
     const std::string rightCommitText = std::string(rightCommit);
     const auto timestamp = std::chrono::steady_clock::now().time_since_epoch().count();
@@ -690,12 +691,24 @@ bool ShelfService::OpenFileVersionDiff(std::string_view file, std::string_view l
         return false;
     }
 
-    const std::string safeName = std::to_string(timestamp) + "_" + SafeFileName(fileText);
+    const std::string safeName = std::to_string(timestamp) + "_" + SafeFileName(leftFileText);
     const std::filesystem::path leftPath = diffDirectory / (SafeFileName(leftCommitText) + "_" + safeName);
     const std::filesystem::path rightPath = diffDirectory / (SafeFileName(rightCommitText) + "_" + safeName);
 
-    const GitCommandResult leftResult = m_repository->Run("show " + Quote(leftCommitText + ":" + fileText), false);
-    const GitCommandResult rightResult = m_repository->Run("show " + Quote(rightCommitText + ":" + fileText), false);
+    const GitCommandResult leftResult = m_repository->Run("show " + Quote(leftCommitText + ":" + leftFileText), false);
+    if (!leftResult.Succeeded())
+    {
+        std::cout << "Cannot open history diff: failed to read " << leftFileText << " at " << leftCommitText << ".\n";
+        return false;
+    }
+
+    const GitCommandResult rightResult = m_repository->Run("show " + Quote(rightCommitText + ":" + rightFileText), false);
+    if (!rightResult.Succeeded())
+    {
+        std::cout << "Cannot open history diff: failed to read " << rightFileText << " at " << rightCommitText << ".\n";
+        return false;
+    }
+
     {
         std::ofstream leftFile(leftPath, std::ios::binary | std::ios::trunc);
         if (!leftFile.is_open())
@@ -703,8 +716,7 @@ bool ShelfService::OpenFileVersionDiff(std::string_view file, std::string_view l
             std::cout << "Cannot open history diff: failed to write left temp file.\n";
             return false;
         }
-        if (leftResult.Succeeded())
-            leftFile << leftResult.output;
+        leftFile << leftResult.output;
     }
     {
         std::ofstream rightFile(rightPath, std::ios::binary | std::ios::trunc);
@@ -713,8 +725,7 @@ bool ShelfService::OpenFileVersionDiff(std::string_view file, std::string_view l
             std::cout << "Cannot open history diff: failed to write right temp file.\n";
             return false;
         }
-        if (rightResult.Succeeded())
-            rightFile << rightResult.output;
+        rightFile << rightResult.output;
     }
 
     const GitCommandResult result = RunExternalCommand(
@@ -729,12 +740,13 @@ bool ShelfService::OpenFileVersionDiff(std::string_view file, std::string_view l
     return result.Succeeded();
 }
 
-bool ShelfService::OpenFileVersionToWorkingDiff(std::string_view file, std::string_view commit) const
+bool ShelfService::OpenFileVersionToWorkingDiff(std::string_view historyFile, std::string_view workingFile, std::string_view commit) const
 {
-    if (m_repository == nullptr || file.empty() || commit.empty())
+    if (m_repository == nullptr || historyFile.empty() || workingFile.empty() || commit.empty())
         return false;
 
-    const std::string fileText = std::string(file);
+    const std::string historyFileText = std::string(historyFile);
+    const std::string workingFileText = std::string(workingFile);
     const std::string commitText = std::string(commit);
     const auto timestamp = std::chrono::steady_clock::now().time_since_epoch().count();
     const std::filesystem::path diffDirectory = m_repository->GitDir(false) / "p4v-git" / "diffs";
@@ -746,12 +758,18 @@ bool ShelfService::OpenFileVersionToWorkingDiff(std::string_view file, std::stri
         return false;
     }
 
-    const std::string safeName = SafeFileName(commitText) + "_" + std::to_string(timestamp) + "_" + SafeFileName(fileText);
+    const std::string safeName = SafeFileName(commitText) + "_" + std::to_string(timestamp) + "_" + SafeFileName(historyFileText);
     const std::filesystem::path versionPath = diffDirectory / ("history_" + safeName);
     const std::filesystem::path workingFallbackPath = diffDirectory / ("working_" + safeName);
-    const std::filesystem::path workingPath = m_repository->Root() / fileText;
+    const std::filesystem::path workingPath = m_repository->Root() / workingFileText;
 
-    const GitCommandResult versionResult = m_repository->Run("show " + Quote(commitText + ":" + fileText), false);
+    const GitCommandResult versionResult = m_repository->Run("show " + Quote(commitText + ":" + historyFileText), false);
+    if (!versionResult.Succeeded())
+    {
+        std::cout << "Cannot open history diff: failed to read " << historyFileText << " at " << commitText << ".\n";
+        return false;
+    }
+
     {
         std::ofstream versionFile(versionPath, std::ios::binary | std::ios::trunc);
         if (!versionFile.is_open())
@@ -759,8 +777,7 @@ bool ShelfService::OpenFileVersionToWorkingDiff(std::string_view file, std::stri
             std::cout << "Cannot open history diff: failed to write history temp file.\n";
             return false;
         }
-        if (versionResult.Succeeded())
-            versionFile << versionResult.output;
+        versionFile << versionResult.output;
     }
 
     std::filesystem::path rightPath = workingPath;

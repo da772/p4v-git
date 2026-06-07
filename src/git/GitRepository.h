@@ -25,6 +25,7 @@ struct GitFileHistoryEntry
 {
     std::string commit;
     std::string shortCommit;
+    std::string path;
     std::string author;
     std::string date;
     std::string summary;

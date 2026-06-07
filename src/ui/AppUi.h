@@ -119,8 +119,8 @@ private:
     static ShelfJobResult RunRestoreShelfFileJob(const std::filesystem::path& repoRoot, const std::string& shelf, const std::string& file);
     static ShelfJobResult RunRestoreShelfFilesJob(const std::filesystem::path& repoRoot, const std::string& shelf, const std::vector<std::string>& files);
     static void RunOpenFileDiffJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& file);
-    static void RunOpenFileHistoryCurrentDiffJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& file, const std::string& commit);
-    static void RunOpenFileHistoryVersionDiffJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& file, const std::string& leftCommit, const std::string& rightCommit);
+    static void RunOpenFileHistoryCurrentDiffJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& historyPath, const std::string& workingPath, const std::string& commit);
+    static void RunOpenFileHistoryVersionDiffJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& leftPath, const std::string& leftCommit, const std::string& rightPath, const std::string& rightCommit);
     static FileHistoryResult RunLoadFileHistoryJob(const std::filesystem::path& repoRoot, const std::string& file);
     static ShelfJobResult RunRestoreFileHistoryVersionJob(const std::filesystem::path& repoRoot, const std::string& shelf, const std::string& file, const std::string& commit);
 
@@ -146,6 +146,10 @@ private:
     void DrawCreateBranchPopup();
     void DrawAppTitleBar();
     void DrawWorkspaceExplorer();
+    void OpenDirectoryPicker();
+    void DrawDirectoryPicker();
+    void DrawDirectoryPickerBreadcrumb();
+    void SetDirectoryPickerPath(const std::filesystem::path& path);
     void DrawFileChanges();
     void DrawFileHistory();
     void DrawLog();
@@ -191,7 +195,7 @@ private:
     void OpenFileDiffs(const std::vector<std::string>& files);
     void OpenFileHistory(const std::string& file, std::string_view shelf = {});
     void OpenFileHistoryCurrentDiff(const GitFileHistoryEntry& entry);
-    void OpenFileHistoryVersionDiff(const std::string& file, const std::string& leftCommit, const std::string& rightCommit);
+    void OpenFileHistoryVersionDiff(const std::string& leftPath, const std::string& leftCommit, const std::string& rightPath, const std::string& rightCommit);
     void RestoreFileHistoryVersion(const std::string& file, const std::string& commit);
     void OpenFileHistoryChange(const GitFileHistoryEntry& entry);
     void RevertShelfFile(const std::string& shelf, const std::string& file);
@@ -223,8 +227,10 @@ private:
     std::array<char, 256> m_shelveSummaryInput = {};
     std::array<char, 2048> m_shelveDescriptionInput = {};
     std::filesystem::path m_sourcePath;
+    std::filesystem::path m_directoryPickerPath;
     bool m_hasSourcePath = false;
     std::string m_sourcePathError;
+    std::string m_directoryPickerError;
     std::string m_selectedBranch;
     std::string m_currentGitBranch;
     std::string m_targetBranch = "main";
@@ -257,6 +263,7 @@ private:
     bool m_shelveSubmitAfter = false;
     bool m_openCreateShelfPopup = false;
     bool m_openCreateBranchPopup = false;
+    bool m_openDirectoryPickerPopup = false;
     std::string m_mainSubmitError;
     std::string m_shelveError;
     std::string m_shelveShelf;

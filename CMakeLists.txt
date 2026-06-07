@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(p4v-git
-    VERSION 0.2.2
+    VERSION 0.2.3
     DESCRIPTION "A cross-platform P4V-inspired Git desktop client with shelves, workspace changes, and review workflows"
     LANGUAGES CXX
 )
