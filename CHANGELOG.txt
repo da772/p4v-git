@@ -1,6 +1,10 @@
 p4v-git changelog
 ==================
 
+0.2.4
+- Added Ctrl+E, Ctrl+R, Ctrl+D, and Ctrl+H file shortcuts for checkout, revert, diff, and history actions.
+- Displayed file action shortcut labels in Workspace Explorer, active change, and committed shelf context menus.
+
 0.2.3
 - Added an ImGui directory picker to Workspace Explorer with clickable path breadcrumbs, click-to-open folders, and a Confirm action for selecting the current folder.
 - Fixed history-to-history diffs after file renames by preserving each row's historical path.
