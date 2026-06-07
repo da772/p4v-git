@@ -50,21 +50,38 @@ static std::optional<std::string> CommittedShelfForFile(const std::vector<ShelfC
     return matchingShelf;
 }
 
-static std::string BuildHistoryDragPayload(std::string_view file, std::string_view commit)
+struct HistoryDragPayload
+{
+    std::string file;
+    std::string path;
+    std::string commit;
+};
+
+static std::string BuildHistoryDragPayload(std::string_view file, std::string_view path, std::string_view commit)
 {
     std::string payload(file);
+    payload += '\n';
+    payload += path;
     payload += '\n';
     payload += commit;
     return payload;
 }
 
-static std::optional<std::pair<std::string, std::string>> ParseHistoryDragPayload(std::string_view payload)
+static std::optional<HistoryDragPayload> ParseHistoryDragPayload(std::string_view payload)
 {
-    const size_t separator = payload.find('\n');
-    if (separator == std::string_view::npos || separator == 0 || separator + 1 >= payload.size())
+    const size_t firstSeparator = payload.find('\n');
+    if (firstSeparator == std::string_view::npos || firstSeparator == 0 || firstSeparator + 1 >= payload.size())
         return std::nullopt;
 
-    return std::make_pair(std::string(payload.substr(0, separator)), std::string(payload.substr(separator + 1)));
+    const size_t secondSeparator = payload.find('\n', firstSeparator + 1);
+    if (secondSeparator == std::string_view::npos || secondSeparator == firstSeparator + 1 || secondSeparator + 1 >= payload.size())
+        return std::nullopt;
+
+    return HistoryDragPayload{
+        std::string(payload.substr(0, firstSeparator)),
+        std::string(payload.substr(firstSeparator + 1, secondSeparator - firstSeparator - 1)),
+        std::string(payload.substr(secondSeparator + 1)),
+    };
 }
 
 static void CopyTextToBuffer(std::string_view text, char* buffer, size_t bufferSize)
@@ -446,22 +463,22 @@ void AppUi::RunOpenFileDiffJob(const std::filesystem::path& repoRoot, const std:
     shelfService.OpenFileDiff(file);
 }
 
-void AppUi::RunOpenFileHistoryCurrentDiffJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& file, const std::string& commit)
+void AppUi::RunOpenFileHistoryCurrentDiffJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& historyPath, const std::string& workingPath, const std::string& commit)
 {
     GitRepository repository(repoRoot);
     ShelfService shelfService;
     shelfService.SetRepository(&repository);
     shelfService.SetTargetBranch(targetBranch);
-    shelfService.OpenFileVersionToWorkingDiff(file, commit);
+    shelfService.OpenFileVersionToWorkingDiff(historyPath, workingPath, commit);
 }
 
-void AppUi::RunOpenFileHistoryVersionDiffJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& file, const std::string& leftCommit, const std::string& rightCommit)
+void AppUi::RunOpenFileHistoryVersionDiffJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& leftPath, const std::string& leftCommit, const std::string& rightPath, const std::string& rightCommit)
 {
     GitRepository repository(repoRoot);
     ShelfService shelfService;
     shelfService.SetRepository(&repository);
     shelfService.SetTargetBranch(targetBranch);
-    shelfService.OpenFileVersionDiff(file, leftCommit, rightCommit);
+    shelfService.OpenFileVersionDiff(leftPath, leftCommit, rightPath, rightCommit);
 }
 
 FileHistoryResult AppUi::RunLoadFileHistoryJob(const std::filesystem::path& repoRoot, const std::string& file)
@@ -1433,14 +1450,14 @@ void AppUi::DrawFileHistory()
             label += "  " + entry.summary;
 
         ui::widgets::TreeLeaf(label + "##history/" + entry.commit);
-        ui::widgets::DragDropSource("p4v-git-history", BuildHistoryDragPayload(m_fileHistoryFile, entry.commit), entry.shortCommit);
+        ui::widgets::DragDropSource("p4v-git-history", BuildHistoryDragPayload(m_fileHistoryFile, entry.path, entry.commit), entry.shortCommit);
 
         if (const std::optional<std::string> payload = ui::widgets::AcceptDragDropPayload("p4v-git-history"))
         {
-            const std::optional<std::pair<std::string, std::string>> draggedHistory = ParseHistoryDragPayload(*payload);
-            if (draggedHistory.has_value() && draggedHistory->first == m_fileHistoryFile && draggedHistory->second != entry.commit)
-                OpenFileHistoryVersionDiff(m_fileHistoryFile, draggedHistory->second, entry.commit);
-            else if (draggedHistory.has_value() && draggedHistory->first != m_fileHistoryFile)
+            const std::optional<HistoryDragPayload> draggedHistory = ParseHistoryDragPayload(*payload);
+            if (draggedHistory.has_value() && draggedHistory->file == m_fileHistoryFile && draggedHistory->commit != entry.commit)
+                OpenFileHistoryVersionDiff(draggedHistory->path, draggedHistory->commit, entry.path, entry.commit);
+            else if (draggedHistory.has_value() && draggedHistory->file != m_fileHistoryFile)
                 m_fileHistoryError = "Drop a history row from the same file.";
         }
 
@@ -2317,22 +2334,23 @@ void AppUi::OpenFileHistoryCurrentDiff(const GitFileHistoryEntry& entry)
 
     const std::filesystem::path repoRoot = m_sourcePath;
     const std::string targetBranch = m_targetBranch;
-    const std::string file = m_fileHistoryFile;
+    const std::string historyPath = entry.path.empty() ? m_fileHistoryFile : entry.path;
+    const std::string workingPath = m_fileHistoryFile;
     const std::string commit = entry.commit;
-    std::thread([repoRoot, targetBranch, file, commit]() {
-        RunOpenFileHistoryCurrentDiffJob(repoRoot, targetBranch, file, commit);
+    std::thread([repoRoot, targetBranch, historyPath, workingPath, commit]() {
+        RunOpenFileHistoryCurrentDiffJob(repoRoot, targetBranch, historyPath, workingPath, commit);
     }).detach();
 }
 
-void AppUi::OpenFileHistoryVersionDiff(const std::string& file, const std::string& leftCommit, const std::string& rightCommit)
+void AppUi::OpenFileHistoryVersionDiff(const std::string& leftPath, const std::string& leftCommit, const std::string& rightPath, const std::string& rightCommit)
 {
-    if (!m_repository.has_value() || file.empty() || leftCommit.empty() || rightCommit.empty() || leftCommit == rightCommit)
+    if (!m_repository.has_value() || leftPath.empty() || rightPath.empty() || leftCommit.empty() || rightCommit.empty() || leftCommit == rightCommit)
         return;
 
     const std::filesystem::path repoRoot = m_sourcePath;
     const std::string targetBranch = m_targetBranch;
-    std::thread([repoRoot, targetBranch, file, leftCommit, rightCommit]() {
-        RunOpenFileHistoryVersionDiffJob(repoRoot, targetBranch, file, leftCommit, rightCommit);
+    std::thread([repoRoot, targetBranch, leftPath, leftCommit, rightPath, rightCommit]() {
+        RunOpenFileHistoryVersionDiffJob(repoRoot, targetBranch, leftPath, leftCommit, rightPath, rightCommit);
     }).detach();
 }
 

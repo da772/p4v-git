@@ -237,37 +237,67 @@ std::vector<GitFileHistoryEntry> GitRepository::FileHistory(std::string_view fil
         return entries;
 
     const std::string fileText(file);
+    std::string currentPath = fileText;
     const std::string commitUrlPrefix = GitHubCommitUrl("", false);
-    const std::string format = "%H%x1f%h%x1f%an%x1f%ad%x1f%s%x1e";
-    const GitCommandResult result = Run("log --follow --date=short --pretty=format:" + Quote(std::string_view(format)) + " -- " + Quote(std::string_view(fileText)), logCommand);
+    const std::string format = "%x1e%H%x1f%h%x1f%an%x1f%ad%x1f%s";
+    const GitCommandResult result = Run("log --follow --date=short --name-status --pretty=format:" + Quote(std::string_view(format)) + " -- " + Quote(std::string_view(fileText)), logCommand);
     if (!result.Succeeded())
         return entries;
 
     size_t cursor = 0;
     while (cursor < result.output.size())
     {
-        const size_t recordEnd = result.output.find('\x1e', cursor);
-        if (recordEnd == std::string::npos)
+        const size_t recordStart = result.output.find('\x1e', cursor);
+        if (recordStart == std::string::npos)
             break;
 
-        const std::string_view record(result.output.data() + cursor, recordEnd - cursor);
-        cursor = recordEnd + 1;
+        const size_t nextRecordStart = result.output.find('\x1e', recordStart + 1);
+        const size_t recordEnd = nextRecordStart == std::string::npos ? result.output.size() : nextRecordStart;
+        std::string_view record(result.output.data() + recordStart + 1, recordEnd - recordStart - 1);
+        cursor = recordEnd;
+
+        while (!record.empty() && (record.front() == '\n' || record.front() == '\r'))
+            record.remove_prefix(1);
         if (record.empty())
             continue;
 
-        const std::vector<std::string_view> fields = SplitFields(record, '\x1f');
+        const size_t headerEnd = record.find('\n');
+        const std::string_view header = headerEnd == std::string_view::npos ? record : record.substr(0, headerEnd);
+        const std::string_view changedFiles = headerEnd == std::string_view::npos ? std::string_view() : record.substr(headerEnd + 1);
+        const std::vector<std::string_view> fields = SplitFields(header, '\x1f');
         if (fields.size() < 5)
             continue;
 
         GitFileHistoryEntry entry;
         entry.commit = std::string(fields[0]);
         entry.shortCommit = std::string(fields[1]);
+        entry.path = currentPath;
         entry.author = std::string(fields[2]);
         entry.date = std::string(fields[3]);
         entry.summary = std::string(fields[4]);
         if (!commitUrlPrefix.empty())
             entry.url = commitUrlPrefix + entry.commit;
         entries.push_back(std::move(entry));
+
+        size_t lineCursor = 0;
+        while (lineCursor < changedFiles.size())
+        {
+            const size_t lineEnd = changedFiles.find('\n', lineCursor);
+            std::string_view line = lineEnd == std::string_view::npos ? changedFiles.substr(lineCursor) : changedFiles.substr(lineCursor, lineEnd - lineCursor);
+            lineCursor = lineEnd == std::string_view::npos ? changedFiles.size() : lineEnd + 1;
+
+            while (!line.empty() && line.back() == '\r')
+                line.remove_suffix(1);
+            if (line.empty() || line.front() != 'R')
+                continue;
+
+            const std::vector<std::string_view> renameFields = SplitFields(line, '\t');
+            if (renameFields.size() >= 3 && renameFields[2] == currentPath)
+            {
+                currentPath = std::string(renameFields[1]);
+                break;
+            }
+        }
     }
 
     return entries;
