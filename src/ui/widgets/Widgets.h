@@ -26,6 +26,14 @@ enum class DockspaceSide
     Center,
 };
 
+enum class KeyboardKey
+{
+    D,
+    E,
+    H,
+    R,
+};
+
 struct DockspaceDefaultLayout
 {
     std::string_view window;
@@ -68,7 +76,10 @@ extern bool BeginContextMenuForLastItem();
 extern bool BeginContextMenuForCurrentWindow(std::string_view id);
 extern bool DidClickCurrentWindowBlank();
 extern bool MenuItem(std::string_view label, bool enabled);
+extern bool MenuItem(std::string_view label, std::string_view shortcut, bool enabled);
 extern void EndContextMenu();
+extern bool IsLastItemHovered();
+extern bool Shortcut(KeyboardKey key);
 extern bool IsCtrlDown();
 extern bool IsShiftDown();
 extern void OpenPopup(std::string_view id);

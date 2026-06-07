@@ -1450,6 +1450,10 @@ void AppUi::DrawFileHistory()
             label += "  " + entry.summary;
 
         ui::widgets::TreeLeaf(label + "##history/" + entry.commit);
+        const bool hovered = ui::widgets::IsLastItemHovered();
+        if (hovered && ui::widgets::Shortcut(ui::widgets::KeyboardKey::D) && !entry.commit.empty())
+            OpenFileHistoryCurrentDiff(entry);
+
         ui::widgets::DragDropSource("p4v-git-history", BuildHistoryDragPayload(m_fileHistoryFile, entry.path, entry.commit), entry.shortCommit);
 
         if (const std::optional<std::string> payload = ui::widgets::AcceptDragDropPayload("p4v-git-history"))
@@ -1463,7 +1467,7 @@ void AppUi::DrawFileHistory()
 
         if (ui::widgets::BeginContextMenuForLastItem())
         {
-            if (ui::widgets::MenuItem("Diff against current version", !entry.commit.empty()))
+            if (ui::widgets::MenuItem("Diff against current version", "Ctrl+D", !entry.commit.empty()))
                 OpenFileHistoryCurrentDiff(entry);
 
             if (ui::widgets::MenuItem("Update file to this version", !entry.commit.empty() && !IsShelfBusy(historyShelf)))
@@ -1586,16 +1590,44 @@ void AppUi::DrawFileEntry(const std::filesystem::directory_entry& entry)
 {
     const std::string relativePath = RelativePath(entry.path());
     ui::widgets::TreeLeaf(FileLabel(entry.path()));
+    const bool hovered = ui::widgets::IsLastItemHovered();
+
+    const std::optional<std::string> activeShelf = ActiveShelfForFile(relativePath);
+    if (hovered && activeShelf.has_value())
+    {
+        const std::vector<std::string> actionFiles = SelectedFilesForShelf(*activeShelf, relativePath);
+        if (ui::widgets::Shortcut(ui::widgets::KeyboardKey::D))
+            OpenFileDiffs(actionFiles);
+        if (ui::widgets::Shortcut(ui::widgets::KeyboardKey::H))
+            OpenFileHistory(relativePath, *activeShelf);
+        if (ui::widgets::Shortcut(ui::widgets::KeyboardKey::R) && !IsShelfBusy(*activeShelf))
+            RevertCheckedOutFiles(*activeShelf, actionFiles);
+    }
+    else if (hovered)
+    {
+        if (ui::widgets::Shortcut(ui::widgets::KeyboardKey::E))
+        {
+            SelectShelf(m_targetBranch);
+            CheckOutFile(entry.path());
+        }
+        if (ui::widgets::Shortcut(ui::widgets::KeyboardKey::H))
+            OpenFileHistory(relativePath, m_targetBranch);
+    }
 
     if (ui::widgets::BeginContextMenuForLastItem())
     {
-        const std::optional<std::string> activeShelf = ActiveShelfForFile(relativePath);
         if (activeShelf.has_value())
         {
-            if (ui::widgets::MenuItem("File History", true))
+            if (ui::widgets::MenuItem("Diff", "Ctrl+D", true))
+            {
+                const std::vector<std::string> actionFiles = SelectedFilesForShelf(*activeShelf, relativePath);
+                OpenFileDiffs(actionFiles);
+            }
+
+            if (ui::widgets::MenuItem("File History", "Ctrl+H", true))
                 OpenFileHistory(relativePath, *activeShelf);
 
-            if (ui::widgets::MenuItem("Revert", !IsShelfBusy(*activeShelf)))
+            if (ui::widgets::MenuItem("Revert", "Ctrl+R", !IsShelfBusy(*activeShelf)))
             {
                 const std::vector<std::string> actionFiles = SelectedFilesForShelf(*activeShelf, relativePath);
                 RevertCheckedOutFiles(*activeShelf, actionFiles);
@@ -1603,10 +1635,10 @@ void AppUi::DrawFileEntry(const std::filesystem::directory_entry& entry)
         }
         else
         {
-            if (ui::widgets::MenuItem("File History", true))
+            if (ui::widgets::MenuItem("File History", "Ctrl+H", true))
                 OpenFileHistory(relativePath, m_targetBranch);
 
-            if (ui::widgets::MenuItem("Check out", true))
+            if (ui::widgets::MenuItem("Check out", "Ctrl+E", true))
             {
                 SelectShelf(m_targetBranch);
                 CheckOutFile(entry.path());
@@ -1849,6 +1881,18 @@ void AppUi::DrawShelfFile(const std::string& shelf, const std::vector<std::strin
     const bool selected = IsActiveFileSelected(shelf, file);
     if (ui::widgets::Selectable(file + "##" + shelf + "/" + file, selected))
         SelectActiveFile(shelf, files, fileIndex);
+    const bool hovered = ui::widgets::IsLastItemHovered();
+
+    const std::vector<std::string> actionFiles = SelectedFilesForShelf(shelf, file);
+    if (hovered)
+    {
+        if (ui::widgets::Shortcut(ui::widgets::KeyboardKey::D))
+            OpenFileDiffs(actionFiles);
+        if (ui::widgets::Shortcut(ui::widgets::KeyboardKey::H))
+            OpenFileHistory(file, shelf);
+        if (ui::widgets::Shortcut(ui::widgets::KeyboardKey::R))
+            RevertCheckedOutFiles(shelf, actionFiles);
+    }
 
     const std::vector<std::string> dragFiles = SelectedFilesForShelf(shelf, file);
     const std::string dragLabel = dragFiles.size() > 1 ? (std::to_string(dragFiles.size()) + " files") : file;
@@ -1856,12 +1900,11 @@ void AppUi::DrawShelfFile(const std::string& shelf, const std::vector<std::strin
 
     if (ui::widgets::BeginContextMenuForLastItem())
     {
-        const std::vector<std::string> actionFiles = SelectedFilesForShelf(shelf, file);
-        if (ui::widgets::MenuItem("Diff", true))
+        if (ui::widgets::MenuItem("Diff", "Ctrl+D", true))
             OpenFileDiffs(actionFiles);
-        if (ui::widgets::MenuItem("File History", true))
+        if (ui::widgets::MenuItem("File History", "Ctrl+H", true))
             OpenFileHistory(file, shelf);
-        if (ui::widgets::MenuItem("Revert", true))
+        if (ui::widgets::MenuItem("Revert", "Ctrl+R", true))
             RevertCheckedOutFiles(shelf, actionFiles);
         ui::widgets::EndContextMenu();
     }
@@ -1877,11 +1920,20 @@ void AppUi::DrawShelfCommittedFile(const std::string& shelf, const std::vector<G
     const bool selected = IsShelfFileSelected(shelf, file.path);
     if (ui::widgets::Selectable(label + "##shelf-file/" + shelf + "/" + file.path, selected))
         SelectShelfFile(shelf, files, fileIndex);
+    const bool hovered = ui::widgets::IsLastItemHovered();
+
+    const std::vector<std::string> actionFiles = SelectedShelfFilesForShelf(shelf, file.path);
+    if (hovered)
+    {
+        if (ui::widgets::Shortcut(ui::widgets::KeyboardKey::H))
+            OpenFileHistory(file.path, shelf);
+        if (ui::widgets::Shortcut(ui::widgets::KeyboardKey::R) && !IsShelfBusy(shelf))
+            RevertShelfFiles(shelf, actionFiles);
+    }
 
     if (ui::widgets::BeginContextMenuForLastItem())
     {
-        const std::vector<std::string> actionFiles = SelectedShelfFilesForShelf(shelf, file.path);
-        if (ui::widgets::MenuItem("File History", true))
+        if (ui::widgets::MenuItem("File History", "Ctrl+H", true))
             OpenFileHistory(file.path, shelf);
 
         if (ui::widgets::MenuItem("Restore", !IsShelfBusy(shelf)))
@@ -1895,7 +1947,7 @@ void AppUi::DrawShelfCommittedFile(const std::string& shelf, const std::vector<G
                 RestoreShelfFiles(shelf, actionFiles);
         }
 
-        if (ui::widgets::MenuItem("Revert", !IsShelfBusy(shelf)))
+        if (ui::widgets::MenuItem("Revert", "Ctrl+R", !IsShelfBusy(shelf)))
             RevertShelfFiles(shelf, actionFiles);
         ui::widgets::EndContextMenu();
     }

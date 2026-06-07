@@ -34,6 +34,23 @@ static ImGuiDir ToImGuiDir(DockspaceSide side)
     return ImGuiDir_Left;
 }
 
+static ImGuiKey ToImGuiKey(KeyboardKey key)
+{
+    switch (key)
+    {
+    case KeyboardKey::D:
+        return ImGuiKey_D;
+    case KeyboardKey::E:
+        return ImGuiKey_E;
+    case KeyboardKey::H:
+        return ImGuiKey_H;
+    case KeyboardKey::R:
+        return ImGuiKey_R;
+    }
+
+    return ImGuiKey_None;
+}
+
 static float ToDockRatio(float screenPercent)
 {
     return std::clamp(screenPercent / 100.0f, 0.05f, 0.95f);
@@ -457,9 +474,30 @@ bool MenuItem(std::string_view label, bool enabled)
     return ImGui::MenuItem(labelText.c_str(), nullptr, false, enabled);
 }
 
+bool MenuItem(std::string_view label, std::string_view shortcut, bool enabled)
+{
+    const std::string labelText = ToString(label);
+    const std::string shortcutText = ToString(shortcut);
+    return ImGui::MenuItem(labelText.c_str(), shortcutText.c_str(), false, enabled);
+}
+
 void EndContextMenu()
 {
     ImGui::EndPopup();
+}
+
+bool IsLastItemHovered()
+{
+    return ImGui::IsItemHovered();
+}
+
+bool Shortcut(KeyboardKey key)
+{
+    const ImGuiIO& io = ImGui::GetIO();
+    if (io.WantTextInput || !io.KeyCtrl || io.KeyShift || io.KeyAlt)
+        return false;
+
+    return ImGui::IsKeyPressed(ToImGuiKey(key), false);
 }
 
 void OpenPopup(std::string_view id)
