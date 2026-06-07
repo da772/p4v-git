@@ -119,8 +119,8 @@ private:
     static ShelfJobResult RunRestoreShelfFileJob(const std::filesystem::path& repoRoot, const std::string& shelf, const std::string& file);
     static ShelfJobResult RunRestoreShelfFilesJob(const std::filesystem::path& repoRoot, const std::string& shelf, const std::vector<std::string>& files);
     static void RunOpenFileDiffJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& file);
-    static void RunOpenFileHistoryCurrentDiffJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& file, const std::string& commit);
-    static void RunOpenFileHistoryVersionDiffJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& file, const std::string& leftCommit, const std::string& rightCommit);
+    static void RunOpenFileHistoryCurrentDiffJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& historyPath, const std::string& workingPath, const std::string& commit);
+    static void RunOpenFileHistoryVersionDiffJob(const std::filesystem::path& repoRoot, const std::string& targetBranch, const std::string& leftPath, const std::string& leftCommit, const std::string& rightPath, const std::string& rightCommit);
     static FileHistoryResult RunLoadFileHistoryJob(const std::filesystem::path& repoRoot, const std::string& file);
     static ShelfJobResult RunRestoreFileHistoryVersionJob(const std::filesystem::path& repoRoot, const std::string& shelf, const std::string& file, const std::string& commit);
 
@@ -195,7 +195,7 @@ private:
     void OpenFileDiffs(const std::vector<std::string>& files);
     void OpenFileHistory(const std::string& file, std::string_view shelf = {});
     void OpenFileHistoryCurrentDiff(const GitFileHistoryEntry& entry);
-    void OpenFileHistoryVersionDiff(const std::string& file, const std::string& leftCommit, const std::string& rightCommit);
+    void OpenFileHistoryVersionDiff(const std::string& leftPath, const std::string& leftCommit, const std::string& rightPath, const std::string& rightCommit);
     void RestoreFileHistoryVersion(const std::string& file, const std::string& commit);
     void OpenFileHistoryChange(const GitFileHistoryEntry& entry);
     void RevertShelfFile(const std::string& shelf, const std::string& file);
