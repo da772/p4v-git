@@ -148,6 +148,7 @@ private:
     void DrawWorkspaceExplorer();
     void OpenDirectoryPicker();
     void DrawDirectoryPicker();
+    void DrawDirectoryPickerBreadcrumb();
     void SetDirectoryPickerPath(const std::filesystem::path& path);
     void DrawFileChanges();
     void DrawFileHistory();
@@ -219,7 +220,6 @@ private:
     const StdoutLog* m_stdoutLog = nullptr;
     Window* m_window = nullptr;
     std::array<char, 1024> m_sourcePathInput = {};
-    std::array<char, 1024> m_directoryPickerPathInput = {};
     std::array<char, 128> m_newShelfNameInput = {};
     std::array<char, 128> m_newBranchNameInput = {};
     std::array<char, 256> m_mainSubmitSummaryInput = {};
@@ -228,7 +228,6 @@ private:
     std::array<char, 2048> m_shelveDescriptionInput = {};
     std::filesystem::path m_sourcePath;
     std::filesystem::path m_directoryPickerPath;
-    std::filesystem::path m_directoryPickerSelection;
     bool m_hasSourcePath = false;
     std::string m_sourcePathError;
     std::string m_directoryPickerError;
