@@ -42,10 +42,20 @@ static ImGuiKey ToImGuiKey(KeyboardKey key)
         return ImGuiKey_D;
     case KeyboardKey::E:
         return ImGuiKey_E;
+    case KeyboardKey::Enter:
+        return ImGuiKey_Enter;
+    case KeyboardKey::Escape:
+        return ImGuiKey_Escape;
     case KeyboardKey::H:
         return ImGuiKey_H;
+    case KeyboardKey::O:
+        return ImGuiKey_O;
     case KeyboardKey::R:
         return ImGuiKey_R;
+    case KeyboardKey::Up:
+        return ImGuiKey_UpArrow;
+    case KeyboardKey::Down:
+        return ImGuiKey_DownArrow;
     }
 
     return ImGuiKey_None;
@@ -445,8 +455,16 @@ void EndTreeNode()
 
 void TreeLeaf(std::string_view label)
 {
+    TreeLeaf(label, false);
+}
+
+void TreeLeaf(std::string_view label, bool selected)
+{
     const std::string labelText = ToString(label);
-    ImGui::TreeNodeEx(labelText.c_str(), ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_SpanAvailWidth);
+    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_SpanAvailWidth;
+    if (selected)
+        flags |= ImGuiTreeNodeFlags_Selected;
+    ImGui::TreeNodeEx(labelText.c_str(), flags);
 }
 
 bool BeginContextMenuForLastItem()
@@ -493,11 +511,32 @@ bool IsLastItemHovered()
 
 bool Shortcut(KeyboardKey key)
 {
+    return Shortcut(key, true, false, false);
+}
+
+bool Shortcut(KeyboardKey key, bool ctrl, bool shift, bool alt)
+{
     const ImGuiIO& io = ImGui::GetIO();
-    if (io.WantTextInput || !io.KeyCtrl || io.KeyShift || io.KeyAlt)
+    if (io.WantTextInput || io.KeyCtrl != ctrl || io.KeyShift != shift || io.KeyAlt != alt)
         return false;
 
     return ImGui::IsKeyPressed(ToImGuiKey(key), false);
+}
+
+bool KeyPressed(KeyboardKey key)
+{
+    return ImGui::IsKeyPressed(ToImGuiKey(key), false);
+}
+
+void FocusNextItem()
+{
+    ImGui::SetKeyboardFocusHere();
+}
+
+void ScrollToLastItem()
+{
+    ImGui::SetItemDefaultFocus();
+    ImGui::SetScrollHereY(0.5f);
 }
 
 void OpenPopup(std::string_view id)

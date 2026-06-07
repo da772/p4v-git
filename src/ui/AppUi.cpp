@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <filesystem>
 #include <future>
 #include <iostream>
@@ -102,6 +103,76 @@ static std::string DirectoryPickerLabel(const std::filesystem::path& path)
 
     const std::string pathText = path.string();
     return pathText.empty() ? std::string(".") : pathText;
+}
+
+static std::string Lowercase(std::string_view text)
+{
+    std::string result;
+    result.reserve(text.size());
+    for (unsigned char ch : text)
+        result.push_back(static_cast<char>(std::tolower(ch)));
+    return result;
+}
+
+static std::vector<std::string_view> SearchTerms(std::string_view filter)
+{
+    std::vector<std::string_view> terms;
+    size_t cursor = 0;
+    while (cursor < filter.size())
+    {
+        while (cursor < filter.size() && std::isspace(static_cast<unsigned char>(filter[cursor])))
+            ++cursor;
+
+        const size_t start = cursor;
+        while (cursor < filter.size() && !std::isspace(static_cast<unsigned char>(filter[cursor])))
+            ++cursor;
+
+        if (start < cursor)
+            terms.push_back(filter.substr(start, cursor - start));
+    }
+    return terms;
+}
+
+static std::vector<std::string> FolderIgnoreNames(std::string_view filter)
+{
+    std::vector<std::string> names;
+    size_t cursor = 0;
+    while (cursor < filter.size())
+    {
+        while (cursor < filter.size() && (std::isspace(static_cast<unsigned char>(filter[cursor])) || filter[cursor] == ',' || filter[cursor] == ';'))
+            ++cursor;
+
+        const size_t start = cursor;
+        while (cursor < filter.size() && !std::isspace(static_cast<unsigned char>(filter[cursor])) && filter[cursor] != ',' && filter[cursor] != ';')
+            ++cursor;
+
+        size_t end = cursor;
+        while (end > start && (filter[end - 1] == '/' || filter[end - 1] == '\\'))
+            --end;
+
+        if (start < end)
+            names.push_back(Lowercase(filter.substr(start, end - start)));
+    }
+    return names;
+}
+
+static bool MatchesSearchTerms(std::string_view text, const std::vector<std::string_view>& terms)
+{
+    const std::string lowerText = Lowercase(text);
+    return std::all_of(terms.begin(), terms.end(), [&lowerText](std::string_view term) {
+        return lowerText.find(term) != std::string::npos;
+    });
+}
+
+static bool IsIgnoredSearchDirectory(const std::filesystem::path& path, const std::vector<std::string>& ignoredFolders)
+{
+    const std::string folderName = Lowercase(path.filename().string());
+    return folderName == ".git" || std::find(ignoredFolders.begin(), ignoredFolders.end(), folderName) != ignoredFolders.end();
+}
+
+static bool EscapePressed()
+{
+    return ui::widgets::KeyPressed(ui::widgets::KeyboardKey::Escape);
 }
 
 static size_t AssignStatusFilesToWorkspaceState(RepositorySnapshot& snapshot)
@@ -508,6 +579,7 @@ AppUi::AppUi()
 {
     const std::filesystem::path currentPath = std::filesystem::current_path();
     CopyTextToBuffer(currentPath.string(), m_sourcePathInput.data(), m_sourcePathInput.size());
+    CopyTextToBuffer(".cache", m_workspaceSearchFolderIgnoreInput.data(), m_workspaceSearchFolderIgnoreInput.size());
 }
 
 void AppUi::SetStdoutLog(const StdoutLog* stdoutLog)
@@ -738,6 +810,8 @@ void AppUi::StartRepositoryLoad(const std::filesystem::path& selectedPath)
     m_branches.clear();
     m_mainRemoteAvailable = false;
     m_mainBehindCount = 0;
+    m_workspaceCurrentFile.clear();
+    m_revealWorkspaceCurrentFile = false;
     m_repositoryLoadFuture = std::async(std::launch::async, [selectedPath]() {
         return LoadRepositorySnapshot(selectedPath, true, true, 0);
     });
@@ -802,6 +876,14 @@ void AppUi::DrawConfirmationPopup()
 
     if (!ui::widgets::BeginModal(popupId))
         return;
+
+    if (EscapePressed())
+    {
+        ClearPendingConfirmation();
+        ui::widgets::CloseCurrentPopup();
+        ui::widgets::EndModal();
+        return;
+    }
 
     if (m_confirmationAction == ConfirmationAction::RevertActiveFile)
     {
@@ -898,6 +980,14 @@ void AppUi::DrawMainSubmitPopup()
     if (!ui::widgets::BeginModal(popupId))
         return;
 
+    if (EscapePressed())
+    {
+        m_mainSubmitError.clear();
+        ui::widgets::CloseCurrentPopup();
+        ui::widgets::EndModal();
+        return;
+    }
+
     const std::vector<std::string> files = MainSubmittableFiles();
     ui::widgets::Text("Submit local changes to " + m_targetBranch + ".");
     ui::widgets::Text(m_targetBranch + " will be pulled before submitting.");
@@ -957,6 +1047,16 @@ void AppUi::DrawShelvePopup()
 
     if (!ui::widgets::BeginModal(popupId))
         return;
+
+    if (EscapePressed())
+    {
+        m_shelveError.clear();
+        m_shelveShelf.clear();
+        m_shelveSubmitAfter = false;
+        ui::widgets::CloseCurrentPopup();
+        ui::widgets::EndModal();
+        return;
+    }
 
     const std::vector<std::string> files = m_workspaceState.CheckedOutFiles(m_shelveShelf);
     if (m_shelveSubmitAfter)
@@ -1019,6 +1119,14 @@ void AppUi::DrawCreateShelfPopup()
     if (!ui::widgets::BeginModal(popupId))
         return;
 
+    if (EscapePressed())
+    {
+        m_createShelfError.clear();
+        ui::widgets::CloseCurrentPopup();
+        ui::widgets::EndModal();
+        return;
+    }
+
     const size_t selectedCount = m_selectedActiveFiles.size();
     ui::widgets::Text("Create a shelf from " + m_targetBranch + ".");
     ui::widgets::Text(std::to_string(selectedCount) + " selected file(s) will move into it.");
@@ -1066,6 +1174,14 @@ void AppUi::DrawCreateBranchPopup()
 
     if (!ui::widgets::BeginModal(popupId))
         return;
+
+    if (EscapePressed())
+    {
+        m_createBranchError.clear();
+        ui::widgets::CloseCurrentPopup();
+        ui::widgets::EndModal();
+        return;
+    }
 
     ui::widgets::Text("Create a branch from " + m_targetBranch + ".");
     if (HasUnshelvedChanges())
@@ -1123,6 +1239,7 @@ void AppUi::Draw()
     DrawCreateShelfPopup();
     DrawCreateBranchPopup();
     DrawDirectoryPicker();
+    DrawWorkspaceSearchPopup();
 }
 
 void AppUi::DrawAppTitleBar()
@@ -1142,6 +1259,184 @@ void AppUi::DrawAppTitleBar()
         m_window->ToggleMaximize();
     if (titleBar.drag)
         m_window->StartMoveDrag();
+}
+
+void AppUi::OpenWorkspaceSearchPopup()
+{
+    if (!m_hasSourcePath)
+        return;
+
+    std::fill(m_workspaceSearchInput.begin(), m_workspaceSearchInput.end(), '\0');
+    m_workspaceSearchFilter.clear();
+    m_workspaceSearchResultsValid = false;
+    m_workspaceSearchSelectedIndex = 0;
+    m_scrollWorkspaceSearchSelection = true;
+    m_focusWorkspaceSearchInput = true;
+    RefreshWorkspaceSearchFiles();
+    FilterWorkspaceSearchResults(m_workspaceSearchInput.data());
+    m_openWorkspaceSearchPopup = true;
+}
+
+void AppUi::RefreshWorkspaceSearchFiles()
+{
+    m_workspaceSearchFiles.clear();
+    m_workspaceSearchResultsValid = false;
+    if (!m_hasSourcePath)
+        return;
+
+    constexpr size_t maxSearchFiles = 20000;
+    const std::vector<std::string> ignoredFolders = FolderIgnoreNames(m_workspaceSearchFolderIgnoreInput.data());
+    std::error_code error;
+    std::filesystem::recursive_directory_iterator iterator(m_sourcePath, std::filesystem::directory_options::skip_permission_denied, error);
+    const std::filesystem::recursive_directory_iterator end;
+    for (; iterator != end; iterator.increment(error))
+    {
+        if (error)
+            break;
+
+        const std::filesystem::directory_entry& entry = *iterator;
+        const std::filesystem::path path = entry.path();
+
+        std::error_code entryError;
+        const bool isDirectory = entry.is_directory(entryError);
+        if (isDirectory && IsIgnoredSearchDirectory(path, ignoredFolders))
+        {
+            iterator.disable_recursion_pending();
+            continue;
+        }
+
+        if (isDirectory)
+            continue;
+
+        m_workspaceSearchFiles.push_back(RelativePath(path));
+        if (m_workspaceSearchFiles.size() >= maxSearchFiles)
+            break;
+    }
+
+    std::sort(m_workspaceSearchFiles.begin(), m_workspaceSearchFiles.end());
+}
+
+void AppUi::FilterWorkspaceSearchResults(std::string_view filterText)
+{
+    const std::string filter = Lowercase(filterText);
+    if (filter == m_workspaceSearchFilter && m_workspaceSearchResultsValid)
+        return;
+
+    m_workspaceSearchFilter = filter;
+    m_workspaceSearchResultsValid = true;
+    m_workspaceSearchResults.clear();
+    const std::vector<std::string_view> terms = SearchTerms(m_workspaceSearchFilter);
+
+    constexpr size_t maxResults = 500;
+    for (const std::string& file : m_workspaceSearchFiles)
+    {
+        if (!MatchesSearchTerms(file, terms))
+            continue;
+
+        m_workspaceSearchResults.push_back(file);
+        if (m_workspaceSearchResults.size() >= maxResults)
+            break;
+    }
+
+    if (m_workspaceSearchSelectedIndex >= m_workspaceSearchResults.size())
+        m_workspaceSearchSelectedIndex = m_workspaceSearchResults.empty() ? 0 : m_workspaceSearchResults.size() - 1;
+    m_scrollWorkspaceSearchSelection = true;
+}
+
+void AppUi::ConfirmWorkspaceSearchSelection()
+{
+    if (m_workspaceSearchResults.empty() || m_workspaceSearchSelectedIndex >= m_workspaceSearchResults.size())
+        return;
+
+    m_workspaceCurrentFile = m_workspaceSearchResults[m_workspaceSearchSelectedIndex];
+    m_revealWorkspaceCurrentFile = true;
+    ui::widgets::CloseCurrentPopup();
+}
+
+void AppUi::DrawWorkspaceSearchPopup()
+{
+    constexpr std::string_view popupId = "Search Workspace";
+    if (m_openWorkspaceSearchPopup)
+    {
+        ui::widgets::OpenPopup(popupId);
+        m_openWorkspaceSearchPopup = false;
+    }
+
+    if (!ui::widgets::BeginModal(popupId))
+        return;
+
+    if (EscapePressed())
+    {
+        ui::widgets::CloseCurrentPopup();
+        ui::widgets::EndModal();
+        return;
+    }
+
+    if (m_focusWorkspaceSearchInput)
+    {
+        ui::widgets::FocusNextItem();
+        m_focusWorkspaceSearchInput = false;
+    }
+
+    ui::widgets::Text("Workspace");
+    ui::widgets::Text(m_sourcePath.string());
+    ui::widgets::SetNextItemWidth(520.0f);
+    ui::widgets::InputText("Filter", m_workspaceSearchInput.data(), m_workspaceSearchInput.size());
+    ui::widgets::SetNextItemWidth(520.0f);
+    if (ui::widgets::InputText("Ignored folders", m_workspaceSearchFolderIgnoreInput.data(), m_workspaceSearchFolderIgnoreInput.size()))
+        RefreshWorkspaceSearchFiles();
+    FilterWorkspaceSearchResults(m_workspaceSearchInput.data());
+
+    if (ui::widgets::KeyPressed(ui::widgets::KeyboardKey::Down) && !m_workspaceSearchResults.empty())
+    {
+        m_workspaceSearchSelectedIndex = std::min(m_workspaceSearchSelectedIndex + 1, m_workspaceSearchResults.size() - 1);
+        m_scrollWorkspaceSearchSelection = true;
+    }
+    if (ui::widgets::KeyPressed(ui::widgets::KeyboardKey::Up) && !m_workspaceSearchResults.empty())
+    {
+        m_workspaceSearchSelectedIndex = m_workspaceSearchSelectedIndex == 0 ? 0 : m_workspaceSearchSelectedIndex - 1;
+        m_scrollWorkspaceSearchSelection = true;
+    }
+    if (ui::widgets::KeyPressed(ui::widgets::KeyboardKey::Enter))
+        ConfirmWorkspaceSearchSelection();
+
+    ui::widgets::Separator();
+    ui::widgets::Text(std::to_string(m_workspaceSearchResults.size()) + " result(s)");
+    ui::widgets::BeginScrollRegion("WorkspaceSearchResults", 320.0f);
+    if (m_workspaceSearchResults.empty())
+    {
+        ui::widgets::Text("No matching files.");
+    }
+    else
+    {
+        for (size_t index = 0; index < m_workspaceSearchResults.size(); ++index)
+        {
+            const bool selected = index == m_workspaceSearchSelectedIndex;
+            if (ui::widgets::Selectable(m_workspaceSearchResults[index] + "##workspace-search/" + std::to_string(index), selected))
+            {
+                m_workspaceSearchSelectedIndex = index;
+                m_scrollWorkspaceSearchSelection = true;
+            }
+            if (selected && m_scrollWorkspaceSearchSelection)
+            {
+                ui::widgets::ScrollToLastItem();
+                m_scrollWorkspaceSearchSelection = false;
+            }
+        }
+    }
+    ui::widgets::EndScrollRegion();
+
+    ui::widgets::Separator();
+    ui::widgets::BeginDisabled(m_workspaceSearchResults.empty());
+    if (ui::widgets::Button("Confirm"))
+        ConfirmWorkspaceSearchSelection();
+    ui::widgets::EndDisabled();
+
+    ui::widgets::SameLine();
+    if (ui::widgets::Button("Cancel"))
+        ui::widgets::CloseCurrentPopup();
+
+    ui::widgets::EndModal();
 }
 
 void AppUi::OpenDirectoryPicker()
@@ -1183,6 +1478,14 @@ void AppUi::DrawDirectoryPicker()
 
     if (!ui::widgets::BeginModal(popupId))
         return;
+
+    if (EscapePressed())
+    {
+        m_directoryPickerError.clear();
+        ui::widgets::CloseCurrentPopup();
+        ui::widgets::EndModal();
+        return;
+    }
 
     ui::widgets::Text("Folder");
     ui::widgets::Text(m_directoryPickerPath.string());
@@ -1295,6 +1598,15 @@ void AppUi::DrawWorkspaceExplorer()
         if (ui::widgets::Button("Use Current Directory"))
             UseSourcePath(std::filesystem::current_path());
 
+        ui::widgets::SameLine();
+        ui::widgets::BeginDisabled(!m_hasSourcePath);
+        if (ui::widgets::Button("Search"))
+            OpenWorkspaceSearchPopup();
+        ui::widgets::EndDisabled();
+
+        if (ui::widgets::Shortcut(ui::widgets::KeyboardKey::O, false, true, true))
+            OpenWorkspaceSearchPopup();
+
         if (!m_sourcePathError.empty())
             ui::widgets::Text(m_sourcePathError);
 
@@ -1354,7 +1666,13 @@ void AppUi::DrawWorkspaceExplorer()
 
             ui::widgets::BeginScrollRegion("WorkspaceExplorerScroll");
             DrawDirectory(m_sourcePath, 0);
+            if (!m_workspaceCurrentFile.empty() && ui::widgets::DidClickCurrentWindowBlank())
+            {
+                m_workspaceCurrentFile.clear();
+                m_revealWorkspaceCurrentFile = false;
+            }
             ui::widgets::EndScrollRegion();
+            m_revealWorkspaceCurrentFile = false;
         }
         else
         {
@@ -1567,9 +1885,10 @@ void AppUi::DrawDirectory(const std::filesystem::path& path, int depth)
     {
         const std::filesystem::path entryPath = entry.path();
         const bool isDirectory = entry.is_directory(error);
-        if (isDirectory && depth < maxDepth)
+        const bool autoOpen = isDirectory && DirectoryContainsWorkspaceCurrentFile(entryPath);
+        if (isDirectory && (depth < maxDepth || autoOpen))
         {
-            if (ui::widgets::BeginTreeNode(PathLabel(entryPath)))
+            if (ui::widgets::BeginTreeNode(PathLabel(entryPath), autoOpen))
             {
                 DrawDirectory(entryPath, depth + 1);
                 ui::widgets::EndTreeNode();
@@ -1586,10 +1905,35 @@ void AppUi::DrawDirectory(const std::filesystem::path& path, int depth)
     }
 }
 
+bool AppUi::DirectoryContainsWorkspaceCurrentFile(const std::filesystem::path& path) const
+{
+    if (m_workspaceCurrentFile.empty())
+        return false;
+
+    std::error_code error;
+    const std::filesystem::path relativeDirectory = std::filesystem::relative(path, m_sourcePath, error);
+    if (error)
+        return false;
+
+    const std::filesystem::path currentFilePath(m_workspaceCurrentFile);
+    auto directoryCursor = relativeDirectory.begin();
+    auto fileCursor = currentFilePath.begin();
+    for (; directoryCursor != relativeDirectory.end(); ++directoryCursor, ++fileCursor)
+    {
+        if (fileCursor == currentFilePath.end() || *directoryCursor != *fileCursor)
+            return false;
+    }
+
+    return true;
+}
+
 void AppUi::DrawFileEntry(const std::filesystem::directory_entry& entry)
 {
     const std::string relativePath = RelativePath(entry.path());
-    ui::widgets::TreeLeaf(FileLabel(entry.path()));
+    const bool currentFile = relativePath == m_workspaceCurrentFile;
+    ui::widgets::TreeLeaf(FileLabel(entry.path()), currentFile);
+    if (currentFile && m_revealWorkspaceCurrentFile)
+        ui::widgets::ScrollToLastItem();
     const bool hovered = ui::widgets::IsLastItemHovered();
 
     const std::optional<std::string> activeShelf = ActiveShelfForFile(relativePath);

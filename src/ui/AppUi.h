@@ -146,6 +146,11 @@ private:
     void DrawCreateBranchPopup();
     void DrawAppTitleBar();
     void DrawWorkspaceExplorer();
+    void OpenWorkspaceSearchPopup();
+    void DrawWorkspaceSearchPopup();
+    void RefreshWorkspaceSearchFiles();
+    void FilterWorkspaceSearchResults(std::string_view filter);
+    void ConfirmWorkspaceSearchSelection();
     void OpenDirectoryPicker();
     void DrawDirectoryPicker();
     void DrawDirectoryPickerBreadcrumb();
@@ -156,6 +161,7 @@ private:
     void UseSourcePath(const std::filesystem::path& path);
     void DrawDirectory(const std::filesystem::path& path, int depth);
     void DrawFileEntry(const std::filesystem::directory_entry& entry);
+    bool DirectoryContainsWorkspaceCurrentFile(const std::filesystem::path& path) const;
     void CheckOutFile(const std::filesystem::path& path);
     void RefreshRepositoryData(bool logCommands = true);
     void RefreshRepositoryDataIfNeeded();
@@ -220,6 +226,8 @@ private:
     const StdoutLog* m_stdoutLog = nullptr;
     Window* m_window = nullptr;
     std::array<char, 1024> m_sourcePathInput = {};
+    std::array<char, 256> m_workspaceSearchInput = {};
+    std::array<char, 256> m_workspaceSearchFolderIgnoreInput = {};
     std::array<char, 128> m_newShelfNameInput = {};
     std::array<char, 128> m_newBranchNameInput = {};
     std::array<char, 256> m_mainSubmitSummaryInput = {};
@@ -264,6 +272,11 @@ private:
     bool m_openCreateShelfPopup = false;
     bool m_openCreateBranchPopup = false;
     bool m_openDirectoryPickerPopup = false;
+    bool m_openWorkspaceSearchPopup = false;
+    bool m_focusWorkspaceSearchInput = false;
+    bool m_scrollWorkspaceSearchSelection = false;
+    bool m_revealWorkspaceCurrentFile = false;
+    bool m_workspaceSearchResultsValid = false;
     std::string m_mainSubmitError;
     std::string m_shelveError;
     std::string m_shelveShelf;
@@ -282,6 +295,11 @@ private:
     std::vector<GitFileHistoryEntry> m_fileHistoryEntries;
     std::string m_fileHistoryError;
     bool m_selectFileHistoryTab = false;
+    std::vector<std::string> m_workspaceSearchFiles;
+    std::vector<std::string> m_workspaceSearchResults;
+    size_t m_workspaceSearchSelectedIndex = 0;
+    std::string m_workspaceSearchFilter;
+    std::string m_workspaceCurrentFile;
     bool m_logAutoScroll = true;
 };
 }

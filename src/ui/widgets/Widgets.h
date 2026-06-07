@@ -30,8 +30,13 @@ enum class KeyboardKey
 {
     D,
     E,
+    Enter,
+    Escape,
     H,
+    O,
     R,
+    Up,
+    Down,
 };
 
 struct DockspaceDefaultLayout
@@ -72,6 +77,7 @@ extern void EndTabItem();
 extern bool BeginTreeNode(std::string_view label, bool autoOpen = false);
 extern void EndTreeNode();
 extern void TreeLeaf(std::string_view label);
+extern void TreeLeaf(std::string_view label, bool selected);
 extern bool BeginContextMenuForLastItem();
 extern bool BeginContextMenuForCurrentWindow(std::string_view id);
 extern bool DidClickCurrentWindowBlank();
@@ -80,6 +86,10 @@ extern bool MenuItem(std::string_view label, std::string_view shortcut, bool ena
 extern void EndContextMenu();
 extern bool IsLastItemHovered();
 extern bool Shortcut(KeyboardKey key);
+extern bool Shortcut(KeyboardKey key, bool ctrl, bool shift, bool alt);
+extern bool KeyPressed(KeyboardKey key);
+extern void FocusNextItem();
+extern void ScrollToLastItem();
 extern bool IsCtrlDown();
 extern bool IsShiftDown();
 extern void OpenPopup(std::string_view id);

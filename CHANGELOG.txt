@@ -1,6 +1,10 @@
 p4v-git changelog
 ==================
 
+0.3.1
+- Added Workspace Explorer file search with a Search button and Shift+Alt+O shortcut.
+- Added live filter results, arrow-key navigation, and Enter/Confirm selection that reveals the selected file in the workspace tree.
+
 0.3.0
 - Bumped the project version to 0.3.0.
 
