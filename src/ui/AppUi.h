@@ -146,6 +146,9 @@ private:
     void DrawCreateBranchPopup();
     void DrawAppTitleBar();
     void DrawWorkspaceExplorer();
+    void OpenDirectoryPicker();
+    void DrawDirectoryPicker();
+    void SetDirectoryPickerPath(const std::filesystem::path& path);
     void DrawFileChanges();
     void DrawFileHistory();
     void DrawLog();
@@ -216,6 +219,7 @@ private:
     const StdoutLog* m_stdoutLog = nullptr;
     Window* m_window = nullptr;
     std::array<char, 1024> m_sourcePathInput = {};
+    std::array<char, 1024> m_directoryPickerPathInput = {};
     std::array<char, 128> m_newShelfNameInput = {};
     std::array<char, 128> m_newBranchNameInput = {};
     std::array<char, 256> m_mainSubmitSummaryInput = {};
@@ -223,8 +227,11 @@ private:
     std::array<char, 256> m_shelveSummaryInput = {};
     std::array<char, 2048> m_shelveDescriptionInput = {};
     std::filesystem::path m_sourcePath;
+    std::filesystem::path m_directoryPickerPath;
+    std::filesystem::path m_directoryPickerSelection;
     bool m_hasSourcePath = false;
     std::string m_sourcePathError;
+    std::string m_directoryPickerError;
     std::string m_selectedBranch;
     std::string m_currentGitBranch;
     std::string m_targetBranch = "main";
@@ -257,6 +264,7 @@ private:
     bool m_shelveSubmitAfter = false;
     bool m_openCreateShelfPopup = false;
     bool m_openCreateBranchPopup = false;
+    bool m_openDirectoryPickerPopup = false;
     std::string m_mainSubmitError;
     std::string m_shelveError;
     std::string m_shelveShelf;

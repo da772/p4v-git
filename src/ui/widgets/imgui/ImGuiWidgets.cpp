@@ -528,6 +528,12 @@ void BeginScrollRegion(std::string_view id)
     BeginScrollRegion(id, false);
 }
 
+void BeginScrollRegion(std::string_view id, float height)
+{
+    const std::string labelText = ToString(id);
+    ImGui::BeginChild(labelText.c_str(), ImVec2(0.0f, height), ImGuiChildFlags_Borders);
+}
+
 void BeginScrollRegion(std::string_view id, bool scrollToBottom)
 {
     const std::string labelText = ToString(id);

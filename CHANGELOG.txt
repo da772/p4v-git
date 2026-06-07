@@ -1,6 +1,9 @@
 p4v-git changelog
 ==================
 
+0.2.3
+- Added an ImGui directory picker to Workspace Explorer for browsing and selecting a source folder.
+
 0.2.2
 - Changed shelf Submit with active files to open the Shelve-and-Submit flow so unshelved shelf changes are committed before merge.
 - Allowed reshelve-before-submit to continue when the active files have no new content to commit.
